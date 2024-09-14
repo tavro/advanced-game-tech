@@ -85,28 +85,28 @@ void init(void)
 //-------------------------------callback functions------------------------------------------
 void display(void)
 {
-	mat4 vm2;
-	
+    mat4 vm2;
+
 	// This function is called whenever it is time to render
 	//  a new frame; due to the idle()-function below, this
 	//  function will get called several times per second
-
-	// render to fbo1!
+    
+	// render to fbo1! (Basically 1A)
 	useFBO(fbo1, 0L, 0L);
 
-	// Clear framebuffer & zbuffer
+    // Clear framebuffer & zbuffer
 	glClearColor(0.2,0.2,0.5,0);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
 	// Activate shader program
 	glUseProgram(phongshader);
 
-	vm2 = viewMatrix * modelToWorldMatrix;
+    vm2 = viewMatrix * modelToWorldMatrix;
 	// Scale and place bunny since it is too small
 	vm2 = vm2 * T(0, -8.5, 0);
 	vm2 = vm2 * S(80,80,80);
 
-	glUniformMatrix4fv(glGetUniformLocation(phongshader, "projectionMatrix"), 1, GL_TRUE, projectionMatrix.m);
+    glUniformMatrix4fv(glGetUniformLocation(phongshader, "projectionMatrix"), 1, GL_TRUE, projectionMatrix.m);
 	glUniformMatrix4fv(glGetUniformLocation(phongshader, "modelviewMatrix"), 1, GL_TRUE, vm2.m);
 	glUniform1i(glGetUniformLocation(phongshader, "texUnit"), 0);
 
@@ -121,18 +121,40 @@ void display(void)
 	// Done rendering the FBO! Set up for rendering on screen, using the result as texture!
 
 //	glFlush(); // Can cause flickering on some systems. Can also be necessary to make drawing complete.
-	useFBO(0L, fbo1, 0L);
-	glClearColor(0.0, 0.0, 0.0, 0);
+
+    // NOTE: I added this (1B: low-pass filter)
+    GLuint lowpassShader = loadShaders("lowpass.vert", "lowpass.frag");
+    for (int i = 0; i < 5; ++i) { // (1C: Apply recursively)
+        useFBO(fbo2, fbo1, 0L);
+        glUseProgram(lowpassShader);
+        glDisable(GL_CULL_FACE);
+        glDisable(GL_DEPTH_TEST);
+        DrawModel(squareModel, lowpassShader, "in_Position", NULL, "in_TexCoord");
+        std::swap(fbo1, fbo2);
+    }
+
+	// NOTE: I added this (1D)
+    GLuint thresholdShader = loadShaders("threshold.vert", "threshold.frag");
+    useFBO(fbo2, fbo1, 0L);
+    glUseProgram(thresholdShader);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_DEPTH_TEST);
+    DrawModel(squareModel, thresholdShader, "in_Position", NULL, "in_TexCoord");
+
+    // NOTE: I added this (1E)
+    GLuint bloomingShader = loadShaders("blooming.vert", "blooming.frag");
+    useFBO(0L, fbo2, fbo1);
+
+    glClearColor(0.0, 0.0, 0.0, 0);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    
+	// NOTE: I added this (1E)
+	glUseProgram(bloomingShader);
+    glUniform1i(glGetUniformLocation(bloomingShader, "texUnit"), 0);
+    glUniform1i(glGetUniformLocation(bloomingShader, "bloomTex"), 1);
+    DrawModel(squareModel, bloomingShader, "in_Position", NULL, "in_TexCoord");
 
-	// Activate second shader program
-	glUseProgram(plaintextureshader);
-
-	glDisable(GL_CULL_FACE);
-	glDisable(GL_DEPTH_TEST);
-	DrawModel(squareModel, plaintextureshader, "in_Position", NULL, "in_TexCoord");
-
-	glutSwapBuffers();
+    glutSwapBuffers();
 }
 
 void reshape(GLsizei w, GLsizei h)
