@@ -106,7 +106,7 @@ GLfloat Vt[24][3] = {
 //----------------------Globals-------------------------------------------------
 Model *cube;
 GLuint shader = 0;
-GLuint bumpTex;
+GLuint bumpMap;
 unsigned int vsBuffer, vtBuffer; // Attribute buffers for Vs and Vt
 
 //-------------------------------------------------------------------------------------
@@ -125,10 +125,13 @@ void init(void)
     glCullFace(GL_BACK);
 
     // Load shader
-    shader = loadShaders("lab1-2.vert", "lab1-2.frag");
+    shader = loadShaders("lab1-2a.vert", "lab1-2a.frag");
 
     // Load bump map (you are encouraged to try different ones)
-    LoadTGATextureSimple("bumpmaps/uppochner.tga", &bumpTex);
+    LoadTGATextureSimple("bumpmaps/uppochner.tga", &bumpMap);
+
+	// NOTE: I added this
+	glUniform1i(glGetUniformLocation(shader, "bumpMap"), 1);
 
 	// load the model
     cube = LoadModelPlus("cubeexp.obj");
@@ -173,6 +176,10 @@ void display(void)
     glUniformMatrix4fv(glGetUniformLocation(shader, "projMatrix"), 1, GL_TRUE, projectionMatrix.m);
     glUniformMatrix4fv(glGetUniformLocation(shader, "viewMatrix"), 1, GL_TRUE, vm2.m);
     glUniform1i(glGetUniformLocation(shader, "texUnit"), 0);
+
+	// NOTE: I added this
+	glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, bumpMap);
 
     DrawModel(cube, shader, "in_Position", "in_Normal", "in_TexCoord");
 
