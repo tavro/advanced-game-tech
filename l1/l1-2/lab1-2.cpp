@@ -125,7 +125,7 @@ void init(void)
     glCullFace(GL_BACK);
 
     // Load shader
-    shader = loadShaders("lab1-2a.vert", "lab1-2a.frag");
+    shader = loadShaders("lab1-2b.vert", "lab1-2b.frag");
 
     // Load bump map (you are encouraged to try different ones)
     LoadTGATextureSimple("bumpmaps/uppochner.tga", &bumpMap);
