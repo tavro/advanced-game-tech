@@ -160,16 +160,14 @@ void setupBones(void)
 	g_bones[1].rot = IdentityMatrix();
 }
 
-
 ///////////////////////////////////////////////////////
 //		D E F O R M	C Y L I N D E R 
 //
 // Desc:	deform the cylinder mesh according to the skeleton
 void DeformCylinder()
 {
-	// vec3 v1, v2;
 	int row, corner;
-	
+
 	// för samtliga vertexar 
 	for (row = 0; row < kMaxRow; row++)
 	{
@@ -190,14 +188,14 @@ void DeformCylinder()
 			// corner around each layer.
 			
 			// NOTE: I added this
-			/*
-			if (weight[row] == 0.0) {
-				g_vertsRes[row][corner] = MultVec3(g_bones[0].rot, g_vertsOrg[row][corner]) + g_bones[0].pos;
+			if (weight[row]) {
+				vec3 localVertex = g_vertsOrg[row][corner] - g_bones[1].pos;
+				g_vertsRes[row][corner] = MultVec3(g_bones[1].rot, localVertex) + g_bones[1].pos;
 			}
 			else {
-				g_vertsRes[row][corner] = MultVec3(g_bones[1].rot, g_vertsOrg[row][corner]) + g_bones[1].pos;
+				vec3 localVertex = g_vertsOrg[row][corner] - g_bones[0].pos;
+				g_vertsRes[row][corner] = MultVec3(g_bones[0].rot, localVertex) + g_bones[0].pos;
 			}
-			*/
 			
 			// ---=========	Part 2: Skinning in CPU ===========------
 			// Deform the cylindern from the skeleton in g_bones.
@@ -211,11 +209,6 @@ void DeformCylinder()
 			// g_vertsRes are modified vertex data to send to OpenGL.
 			
 			// NOTE: I added this
-			/*
-			vec3 pos1 = MultVec3(g_bones[0].rot, g_vertsOrg[row][corner]) + g_bones[0].pos;
-            vec3 pos2 = MultVec3(g_bones[1].rot, g_vertsOrg[row][corner]) + g_bones[1].pos;
-			g_vertsRes[row][corner] = g_boneWeights[row][corner].x * pos1 + g_boneWeights[row][corner].y * pos2;
-			*/
 		}
 	}
 }
@@ -350,7 +343,7 @@ int main(int argc, char **argv)
 	// initiering
 	BuildCylinder();
 	setupBones();
-	g_shader = loadShaders("shader2.vert" , "shader2.frag");
+	g_shader = loadShaders("shader.vert" , "shader.frag");
 
 	glutMainLoop();
 	exit(0);

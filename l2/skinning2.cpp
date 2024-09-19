@@ -216,7 +216,7 @@ void DeformCylinder()
       // g_vertsOrg
       // g_vertsRes
 
-	  // TODO: I added this
+	  // NOTE: I added this
 	  g_vertsRes[row][corner] = vec3(0.0, 0.0, 0.0);
       mat4 transformationMatrix = IdentityMatrix();
 
