@@ -34,3 +34,17 @@ eller positiv riktning ser det ut som att ytan "höjer" sig eller "sänker" sig.
 ### Blev Mvt rätt med mat3 i 2b? Om inte, vad gjorde du åt det?
 
 ja, om det inte skulle ha blivit rätt skulle vektorn transformerats fel. man skulle se det på bumpmap-effekten... allt skall vara normaliserat korrekt.
+
+## l2 frågor
+
+### I del 2, translaterade du med translationsmatris eller med addition på koordinater? Spelar det någon roll?
+
+addition på positionsvektorer (koordinater). båda ger samma resultat men matriser kan lättare kombineras med rotation och skalning etc...
+
+### Hur löste du GPU-skinningen? Vilken information behövde skickas till shadern?
+
+flyttade beräkningen av vertextransformationer till shadern. skickade med rotations- och positionsmatriser
+
+### Om man gör skinning med en mer komplex modell (armar och ben mm), behövs vilolägesrotationer egentligen?
+
+ja, det är grunden för beräkningarna! annars kan modellen deformeras på lustiga vis

@@ -175,7 +175,7 @@ void DeformCylinder()
 	{
 		for (corner = 0; corner < kMaxCorners; corner++)
 		{
-			g_vertsRes[row][corner] = g_vertsOrg[row][corner];
+			// g_vertsRes[row][corner] = g_vertsOrg[row][corner];
 			
 			// ----=========	Part 1: Stitching in CPU ===========-----
 			// Deform the cylindern from the skeleton in g_bones.
@@ -189,6 +189,15 @@ void DeformCylinder()
 			// row goes long the length of the cylinder,
 			// corner around each layer.
 			
+			// NOTE: I added this
+			/*
+			if (weight[row] == 0.0) {
+				g_vertsRes[row][corner] = MultVec3(g_bones[0].rot, g_vertsOrg[row][corner]) + g_bones[0].pos;
+			}
+			else {
+				g_vertsRes[row][corner] = MultVec3(g_bones[1].rot, g_vertsOrg[row][corner]) + g_bones[1].pos;
+			}
+			*/
 			
 			// ---=========	Part 2: Skinning in CPU ===========------
 			// Deform the cylindern from the skeleton in g_bones.
@@ -201,6 +210,12 @@ void DeformCylinder()
 			// g_vertsOrg are original vertex data.
 			// g_vertsRes are modified vertex data to send to OpenGL.
 			
+			// NOTE: I added this
+			/*
+			vec3 pos1 = MultVec3(g_bones[0].rot, g_vertsOrg[row][corner]) + g_bones[0].pos;
+            vec3 pos2 = MultVec3(g_bones[1].rot, g_vertsOrg[row][corner]) + g_bones[1].pos;
+			g_vertsRes[row][corner] = g_boneWeights[row][corner].x * pos1 + g_boneWeights[row][corner].y * pos2;
+			*/
 		}
 	}
 }
@@ -229,6 +244,11 @@ void setBoneRotation(void)
 {
 	// Uppgift 3 TODO: Here you can send the bone rotation
 	// to the vertex shader
+
+	// TODO: I added this
+	GLuint boneRotLoc = glGetUniformLocation(g_shader, "boneRot");
+    mat4 boneRotations[2] = { g_bones[0].rot, g_bones[1].rot };
+    glUniformMatrix4fv(boneRotLoc, 2, GL_TRUE, (GLfloat *)boneRotations);
 }
 
 
@@ -239,6 +259,11 @@ void setBoneLocation(void)
 {
 	// Uppgift 3 TODO: Here you can send the bone position
 	// to the vertex shader
+
+	// NOTE: I added this
+	GLuint bonePosLoc = glGetUniformLocation(g_shader, "bonePos");
+	vec3 bonePositions[2] = { g_bones[0].pos, g_bones[1].pos };
+    glUniform3fv(bonePosLoc, 2, (GLfloat *)bonePositions);
 }
 
 
@@ -325,7 +350,7 @@ int main(int argc, char **argv)
 	// initiering
 	BuildCylinder();
 	setupBones();
-	g_shader = loadShaders("shader.vert" , "shader.frag");
+	g_shader = loadShaders("shader2.vert" , "shader2.frag");
 
 	glutMainLoop();
 	exit(0);

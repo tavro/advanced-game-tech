@@ -215,10 +215,27 @@ void DeformCylinder()
       // g_boneWeights
       // g_vertsOrg
       // g_vertsRes
+
+	  // TODO: I added this
+	  g_vertsRes[row][corner] = vec3(0.0, 0.0, 0.0);
+      mat4 transformationMatrix = IdentityMatrix();
+
+      for (int b = 0; b < kMaxBones; b++) {
+        mat4 boneTransformationMatrix;
+        if (b == 0) { // first bone
+          boneTransformationMatrix = T(g_bones[b].pos.x, g_bones[b].pos.y, g_bones[b].pos.z);
+        }
+        else {
+		  boneTransformationMatrix = T(g_bones[b].pos.x - g_bones[b - 1].pos.x, g_bones[b].pos.y - g_bones[b - 1].pos.y, g_bones[b].pos.z - g_bones[b - 1].pos.z);
+        }
+
+        transformationMatrix = transformationMatrix * boneTransformationMatrix * g_bonesRes[b].rot;
+        vec4 orgVertex = vec4(g_vertsOrg[row][corner] - g_bones[b].pos, 1.0);
+        g_vertsRes[row][corner] += vec3(g_boneWeights[row][corner][b] * (transformationMatrix * orgVertex));
+      }
     }
   }
 }
-
 
 /////////////////////////////////////////////
 //		A N I M A T E  B O N E S
