@@ -45,7 +45,8 @@ vec3 g_normalsRes[kMaxRow][kMaxCorners];
 // vertex attributes sent to OpenGL
 vec3 g_boneWeights[kMaxRow][kMaxCorners];
 
-float weight[kMaxRow] = {0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+//float weight[kMaxRow] = {0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+float weight[kMaxRow] = {0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0};
 
 Model *cylinderModel; // Collects all the above for drawing with glDrawElements
 
@@ -173,7 +174,7 @@ void DeformCylinder()
 	{
 		for (corner = 0; corner < kMaxCorners; corner++)
 		{
-			// g_vertsRes[row][corner] = g_vertsOrg[row][corner];
+			g_vertsRes[row][corner] = g_vertsOrg[row][corner];
 			
 			// ----=========	Part 1: Stitching in CPU ===========-----
 			// Deform the cylindern from the skeleton in g_bones.
@@ -186,8 +187,7 @@ void DeformCylinder()
 			//
 			// row goes long the length of the cylinder,
 			// corner around each layer.
-			
-			// NOTE: I added this
+			/*
 			if (weight[row]) {
 				vec3 localVertex = g_vertsOrg[row][corner] - g_bones[1].pos;
 				g_vertsRes[row][corner] = MultVec3(g_bones[1].rot, localVertex) + g_bones[1].pos;
@@ -196,6 +196,7 @@ void DeformCylinder()
 				vec3 localVertex = g_vertsOrg[row][corner] - g_bones[0].pos;
 				g_vertsRes[row][corner] = MultVec3(g_bones[0].rot, localVertex) + g_bones[0].pos;
 			}
+			*/
 			
 			// ---=========	Part 2: Skinning in CPU ===========------
 			// Deform the cylindern from the skeleton in g_bones.
@@ -207,8 +208,18 @@ void DeformCylinder()
 			// g_boneWeights are blending weights for the bones.
 			// g_vertsOrg are original vertex data.
 			// g_vertsRes are modified vertex data to send to OpenGL.
-			
-			// NOTE: I added this
+			/*
+			mat4 transformationMatrix0 { T(g_bones[0].pos.x, g_bones[0].pos.y, g_bones[0].pos.z) * g_bones[0].rot };
+			mat4 transformationMatrix1 { T(g_bones[1].pos.x, g_bones[1].pos.y, g_bones[1].pos.z) * g_bones[1].rot };
+
+			mat4 translationMatrix0 { T(g_bones[0].pos.x, g_bones[0].pos.y, g_bones[0].pos.z) };
+			mat4 translationMatrix1 { T(g_bones[1].pos.x, g_bones[1].pos.y, g_bones[1].pos.z) };
+
+			mat4 matrix1 { transformationMatrix0 * InvertMat4(translationMatrix0) };
+			mat4 matrix2 { transformationMatrix0 * transformationMatrix1 * InvertMat4(translationMatrix1) * InvertMat4(translationMatrix0) };
+
+			g_vertsRes[row][corner] = g_boneWeights[row][corner].x * matrix1 * vec4(g_vertsOrg[row][corner], 1.0) + g_boneWeights[row][corner].y * matrix2 * vec4(g_vertsOrg[row][corner], 1.0);
+			*/
 		}
 	}
 }
@@ -295,6 +306,18 @@ void DisplayWindow()
     m = projectionMatrix * modelViewMatrix;
     glUniformMatrix4fv(glGetUniformLocation(g_shader, "matrix"), 1, GL_TRUE, m.m);
 	
+	mat4 transformationMatrix0 { T(g_bones[0].pos.x, g_bones[0].pos.y, g_bones[0].pos.z) * g_bones[0].rot };
+	mat4 transformationMatrix1 { T(g_bones[1].pos.x, g_bones[1].pos.y, g_bones[1].pos.z) * g_bones[1].rot };
+
+	mat4 translationMatrix0 { T(g_bones[0].pos.x, g_bones[0].pos.y, g_bones[0].pos.z) };
+	mat4 translationMatrix1 { T(g_bones[1].pos.x, g_bones[1].pos.y, g_bones[1].pos.z) };
+
+	mat4 matrix1 { transformationMatrix0 * InvertMat4(translationMatrix0) };
+	mat4 matrix2 { transformationMatrix0 * transformationMatrix1 * InvertMat4(translationMatrix1) * InvertMat4(translationMatrix0) };
+
+	glUniformMatrix4fv(glGetUniformLocation(g_shader, "matrix1"), 1, GL_TRUE, matrix1.m);
+    glUniformMatrix4fv(glGetUniformLocation(g_shader, "matrix2"), 1, GL_TRUE, matrix2.m);
+
 	DrawCylinder();
 
 	glutSwapBuffers();
@@ -343,7 +366,7 @@ int main(int argc, char **argv)
 	// initiering
 	BuildCylinder();
 	setupBones();
-	g_shader = loadShaders("shader.vert" , "shader.frag");
+	g_shader = loadShaders("shader2.vert" , "shader2.frag");
 
 	glutMainLoop();
 	exit(0);
