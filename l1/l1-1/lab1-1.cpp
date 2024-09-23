@@ -120,11 +120,12 @@ void display(void)
 
 	// Done rendering the FBO! Set up for rendering on screen, using the result as texture!
 
-//	glFlush(); // Can cause flickering on some systems. Can also be necessary to make drawing complete.
+	// glFlush(); // Can cause flickering on some systems. Can also be necessary to make drawing complete.
 
     // NOTE: I added this (1B: low-pass filter)
     GLuint lowpassShader = loadShaders("lowpass.vert", "lowpass.frag");
-    for (int i = 0; i < 5; ++i) { // (1C: Apply recursively)
+    
+	for (int i = 0; i < 5; ++i) { // (1C: Apply recursively)
         useFBO(fbo2, fbo1, 0L);
         glUseProgram(lowpassShader);
         glDisable(GL_CULL_FACE);
@@ -147,7 +148,7 @@ void display(void)
 
     glClearColor(0.0, 0.0, 0.0, 0);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    
+	
 	// NOTE: I added this (1E)
 	glUseProgram(bloomingShader);
     glUniform1i(glGetUniformLocation(bloomingShader, "texUnit"), 0);

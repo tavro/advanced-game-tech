@@ -226,7 +226,7 @@ void DeformCylinder()
           boneTransformationMatrix = T(g_bones[b].pos.x, g_bones[b].pos.y, g_bones[b].pos.z);
         }
         else {
-		  boneTransformationMatrix = T(g_bones[b].pos.x - g_bones[b - 1].pos.x, g_bones[b].pos.y - g_bones[b - 1].pos.y, g_bones[b].pos.z - g_bones[b - 1].pos.z);
+		      boneTransformationMatrix = T(g_bones[b].pos.x - g_bones[b - 1].pos.x, g_bones[b].pos.y - g_bones[b - 1].pos.y, g_bones[b].pos.z - g_bones[b - 1].pos.z);
         }
 
         transformationMatrix = transformationMatrix * boneTransformationMatrix * g_bonesRes[b].rot;

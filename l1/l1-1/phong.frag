@@ -13,7 +13,7 @@ in vec3 exSurface; // Phong (specular)
 
 void main(void)
 {
-    const vec3 light = vec3(2.0, 2.0, 2.0);
+    const vec3 light = 1.1f * vec3(0.59, 0.59, 0.59);
     float diffuse, specular, shade;
     
     // Diffuse
