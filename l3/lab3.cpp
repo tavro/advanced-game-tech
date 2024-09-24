@@ -159,6 +159,15 @@ void updateWorld()
 	for (i = 0; i < kNumBalls; i++)
 	{
 		// YOUR CODE HERE
+		// NOTE: I added this
+		vec3 nullPtr; // not nullptr but we don't need this
+		vec3 perpendicular;
+		SplitVector(ball[i].v, vec3(0, 1, 0), &nullPtr, &perpendicular);
+
+		float rotationAngle = -Norm(perpendicular) / (42 * kBallSize);
+		vec3 rotationAxis = cross(ball[i].v, vec3(0, 1, 0));
+
+		ball[i].R = ball[i].R * ArbRotate(rotationAxis, rotationAngle);
 	}
 
 	// Control rotation here to reflect
