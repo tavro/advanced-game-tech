@@ -124,6 +124,14 @@ void loadMaterial(Material mt)
     glUniform1fv(glGetUniformLocation(shader, "shininess"), 1, &mt.shininess);
 }
 
+// NOTE: Stolen from book
+mat4 SetRotation(vec3 v, vec3 n, float radius) {
+    vec3 r = cross(v, n);
+    vec3 vn, vp;
+    SplitVector(v, n, &vn, &vp);
+    return ArbRotate(r, -Norm(vp)/radius);
+}
+
 //---------------------------------- physics update and billiard table rendering ----------------------------------
 void updateWorld()
 {
@@ -153,6 +161,24 @@ void updateWorld()
         for (j = i+1; j < kNumBalls; j++)
         {
             // YOUR CODE HERE
+			// NOTE: I added this
+			vec3 cNormal = ball[i].X - ball[j].X;
+
+			float dist = Norm(cNormal);
+			float d = 2 * kBallSize;
+			
+			cNormal.y = 0;
+			cNormal = Normalize(cNormal);
+
+			if(dist < d) {
+				vec3 impulse = (-(0 + 1) * dot((ball[i].v - ball[j].v), cNormal) / ((1 / ball[i].mass) + (1 / ball[j].mass))) * cNormal;
+				ball[i].F +=  impulse / deltaT;
+                ball[i].T +=  CrossProduct(cNormal, impulse);
+                ball[j].F +=  -impulse / deltaT;
+                ball[j].T +=  CrossProduct(-cNormal, impulse);
+                ball[j].X += (d - dist) * cNormal;
+                ball[j].X -= (d - dist) * cNormal;
+			}
         }
 
 	// Control rotation here to movement only, no friction (uppgift 1)
@@ -160,14 +186,8 @@ void updateWorld()
 	{
 		// YOUR CODE HERE
 		// NOTE: I added this
-		vec3 nullPtr; // not nullptr but we don't need this
-		vec3 perpendicular;
-		SplitVector(ball[i].v, vec3(0, 1, 0), &nullPtr, &perpendicular);
-
-		float rotationAngle = -Norm(perpendicular) / (42 * kBallSize);
-		vec3 rotationAxis = cross(ball[i].v, vec3(0, 1, 0));
-
-		ball[i].R = ball[i].R * ArbRotate(rotationAxis, rotationAngle);
+        mat4 diffrot = SetRotation(ball[i].v, vec3(0, 1, 0), 20 * kBallSize);
+        ball[i].R = diffrot * ball[i].R;
 	}
 
 	// Control rotation here to reflect
