@@ -46,7 +46,7 @@ vec3 g_normalsRes[kMaxRow][kMaxCorners];
 vec3 g_boneWeights[kMaxRow][kMaxCorners];
 
 //float weight[kMaxRow] = {0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0};
-float weight[kMaxRow] = {0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0};
+float weight[kMaxRow] = {0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9};
 
 Model *cylinderModel; // Collects all the above for drawing with glDrawElements
 
@@ -208,18 +208,17 @@ void DeformCylinder()
 			// g_boneWeights are blending weights for the bones.
 			// g_vertsOrg are original vertex data.
 			// g_vertsRes are modified vertex data to send to OpenGL.
-			/*
 			mat4 transformationMatrix0 { T(g_bones[0].pos.x, g_bones[0].pos.y, g_bones[0].pos.z) * g_bones[0].rot };
 			mat4 transformationMatrix1 { T(g_bones[1].pos.x, g_bones[1].pos.y, g_bones[1].pos.z) * g_bones[1].rot };
 
 			mat4 translationMatrix0 { T(g_bones[0].pos.x, g_bones[0].pos.y, g_bones[0].pos.z) };
 			mat4 translationMatrix1 { T(g_bones[1].pos.x, g_bones[1].pos.y, g_bones[1].pos.z) };
 
+			// NOTE: Från föreläsning 6c
 			mat4 matrix1 { transformationMatrix0 * InvertMat4(translationMatrix0) };
 			mat4 matrix2 { transformationMatrix0 * transformationMatrix1 * InvertMat4(translationMatrix1) * InvertMat4(translationMatrix0) };
 
 			g_vertsRes[row][corner] = g_boneWeights[row][corner].x * matrix1 * vec4(g_vertsOrg[row][corner], 1.0) + g_boneWeights[row][corner].y * matrix2 * vec4(g_vertsOrg[row][corner], 1.0);
-			*/
 		}
 	}
 }
@@ -366,7 +365,7 @@ int main(int argc, char **argv)
 	// initiering
 	BuildCylinder();
 	setupBones();
-	g_shader = loadShaders("shader2.vert" , "shader2.frag");
+	g_shader = loadShaders("shader.vert" , "shader.frag");
 
 	glutMainLoop();
 	exit(0);

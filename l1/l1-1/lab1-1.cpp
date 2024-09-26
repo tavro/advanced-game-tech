@@ -43,7 +43,7 @@ Model* squareModel;
 
 //----------------------Globals-------------------------------------------------
 Model *model1;
-FBOstruct *fbo1, *fbo2;
+FBOstruct *fbo1, *fbo2, *fbo3;
 GLuint phongshader = 0, plaintextureshader = 0;
 
 //-------------------------------------------------------------------------------------
@@ -67,6 +67,9 @@ void init(void)
 
 	fbo1 = initFBO(initWidth, initHeight, 0);
 	fbo2 = initFBO(initWidth, initHeight, 0);
+	fbo3 = initFBO(initWidth, initHeight, 0);
+
+	//glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, initWidth, initHeight, 0, GL_RGBA, GL_FLOAT, NULL);
 
 	// load the model
 	model1 = LoadModel("stanford-bunny.obj");
@@ -80,6 +83,34 @@ void init(void)
 	vec3 up = vec3(0, 1, 0);
 	viewMatrix = lookAtv(cam, point, up);
 	modelToWorldMatrix = IdentityMatrix();
+}
+
+void runfilter(GLuint shader, FBOstruct *in1, FBOstruct *in2, FBOstruct *out)
+
+{
+
+    glUseProgram(shader);
+
+    
+
+    // Many of these things would be more efficiently done once and for all
+
+    glDisable(GL_CULL_FACE);
+
+    glDisable(GL_DEPTH_TEST);
+
+    glUniform1i(glGetUniformLocation(shader, "texUnit"), 0);
+
+    glUniform1i(glGetUniformLocation(shader, "texUnit2"), 1);
+
+
+    useFBO(out, in1, in2);
+
+
+    DrawModel(squareModel, shader, "in_Position", NULL, "in_TexCoord");
+
+    glFlush();
+
 }
 
 //-------------------------------callback functions------------------------------------------
@@ -125,35 +156,26 @@ void display(void)
     // NOTE: I added this (1B: low-pass filter)
     GLuint lowpassShader = loadShaders("lowpass.vert", "lowpass.frag");
     
-	for (int i = 0; i < 5; ++i) { // (1C: Apply recursively)
-        useFBO(fbo2, fbo1, 0L);
-        glUseProgram(lowpassShader);
-        glDisable(GL_CULL_FACE);
-        glDisable(GL_DEPTH_TEST);
-        DrawModel(squareModel, lowpassShader, "in_Position", NULL, "in_TexCoord");
-        std::swap(fbo1, fbo2);
-    }
-
 	// NOTE: I added this (1D)
     GLuint thresholdShader = loadShaders("threshold.vert", "threshold.frag");
-    useFBO(fbo2, fbo1, 0L);
-    glUseProgram(thresholdShader);
-    glDisable(GL_CULL_FACE);
-    glDisable(GL_DEPTH_TEST);
-    DrawModel(squareModel, thresholdShader, "in_Position", NULL, "in_TexCoord");
+    runfilter(thresholdShader, fbo1, 0L, fbo2);
+	for (int i = 0; i < 150; ++i) { // (1C: Apply recursively)
+    	runfilter(lowpassShader, fbo2, 0L, fbo3);
+    	runfilter(lowpassShader, fbo3, 0L, fbo2);
+    }
 
     // NOTE: I added this (1E)
     GLuint bloomingShader = loadShaders("blooming.vert", "blooming.frag");
-    useFBO(0L, fbo2, fbo1);
+	glUniform1i(glGetUniformLocation(bloomingShader, "bloomTex"), 1);
+    runfilter(bloomingShader, fbo2, fbo1, fbo3);
 
-    glClearColor(0.0, 0.0, 0.0, 0);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	useFBO(0L, fbo3, 0L);
 	
-	// NOTE: I added this (1E)
-	glUseProgram(bloomingShader);
-    glUniform1i(glGetUniformLocation(bloomingShader, "texUnit"), 0);
-    glUniform1i(glGetUniformLocation(bloomingShader, "bloomTex"), 1);
-    DrawModel(squareModel, bloomingShader, "in_Position", NULL, "in_TexCoord");
+	// Activate second shader program
+	glUseProgram(plaintextureshader);
+	glDisable(GL_CULL_FACE);
+	glDisable(GL_DEPTH_TEST);
+	DrawModel(squareModel, plaintextureshader, "in_Position", NULL, "in_TexCoord");
 
     glutSwapBuffers();
 }

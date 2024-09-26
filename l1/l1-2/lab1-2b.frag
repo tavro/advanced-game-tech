@@ -16,9 +16,9 @@ void main(void)
 {
     vec3 light = normalize(vec3(0.0, 0.7, 0.7)); // Light source in view coordinates
 
-    mat3 Mvt = mat3(normalize(Ps), normalize(Pt), normalize(out_Normal));
+    mat3 Mvt = transpose(mat3(Ps, Pt, normalize(out_Normal)));
 
-    vec3 lightTangentSpace = normalize(Mvt * light); // Transform the light vector into texture space (tangent space)
+    vec3 lightTangentSpace = Mvt * light; // Transform the light vector into texture space (tangent space)
 
 	// Calculate gradients here
     float offset = 1.0 / 256.0; // texture size, same in both directions
@@ -28,10 +28,11 @@ void main(void)
 
     // Modify the normal using the tangent and bitangent (Ps, Pt)
     float bumpScale = 2.0;
-    vec3 modifiedNormal = normalize(vec3(0.0, 0.0, 1.0) + bumpScale * (Ps * Bs + Pt * Bt));
+
+    vec3 modifiedNormal = vec3(Bs, Bt, 1.0);
     float diffuse = max(dot(modifiedNormal, lightTangentSpace), 0.0);
 
     // Simplified lighting calculation.
 	// A full solution would include material, ambient, specular, light sources, multiply by texture.
-    out_Color = vec4(vec3(diffuse) * texture(texUnit, outTexCoord).rgb, 1.0);
+    out_Color = vec4(vec3(diffuse), 1.0);
 }

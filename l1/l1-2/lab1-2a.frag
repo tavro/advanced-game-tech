@@ -29,5 +29,5 @@ void main(void)
 
 	// Simplified lighting calculation.
 	// A full solution would include material, ambient, specular, light sources, multiply by texture.
-    out_Color = vec4(vec3(diffuse) * texture(texUnit, outTexCoord).rgb, 1.0);
+    out_Color = vec4(vec3(diffuse), 1.0);
 }
