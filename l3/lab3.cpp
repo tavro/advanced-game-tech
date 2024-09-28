@@ -170,14 +170,18 @@ void updateWorld()
 			cNormal.y = 0;
 			cNormal = Normalize(cNormal);
 
-			if(dist < d) {
-				vec3 impulse = (-(0 + 1) * dot((ball[i].v - ball[j].v), cNormal) / ((1 / ball[i].mass) + (1 / ball[j].mass))) * cNormal;
+			if(dist < d && dot(ball[i].v - ball[j].v, normalize(ball[j].X - ball[i].X)) >= 0) {
+				vec3 impulse = (-(1 + 1) * dot((ball[i].v - ball[j].v), cNormal) / ((1 / ball[i].mass) + (1 / ball[j].mass))) * cNormal;
+				/*
 				ball[i].F +=  impulse / deltaT;
                 ball[i].T +=  CrossProduct(cNormal, impulse);
                 ball[j].F +=  -impulse / deltaT;
                 ball[j].T +=  CrossProduct(-cNormal, impulse);
                 ball[j].X += (d - dist) * cNormal;
                 ball[j].X -= (d - dist) * cNormal;
+				*/
+				ball[i].P += impulse;
+                ball[j].P -= impulse;
 			}
         }
 
@@ -195,6 +199,10 @@ void updateWorld()
 	for (i = 0; i < kNumBalls; i++)
 	{
 		// YOUR CODE HERE
+		// NOTE: I added this
+		vec3 frictionForce = (ball[i].v + CrossProduct(ball[i].omega, vec3(0, -kBallSize, 0))) * 0.25;
+		ball[i].T += CrossProduct(vec3(0, -kBallSize, 0), - frictionForce);
+		ball[i].F -= frictionForce;
 	}
 
 // Update state, follows the book closely
@@ -205,6 +213,10 @@ void updateWorld()
 
 		// Note: omega is not set. How do you calculate it? (del av uppgift 2)
 		// YOUR CODE HERE
+		// NOTE: I added this
+		float j = 2.0/5.0 * ball[i].mass * kBallSize * kBallSize;
+		mat3 I = { j, 0, 0, 0, j, 0, 0, 0, j };
+		ball[i].omega = InvertMat3(I) * ball[i].L;
 
 //		v := P * 1/mass
 		ball[i].v = ball[i].P * 1.0/(ball[i].mass);
