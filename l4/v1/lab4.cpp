@@ -7,11 +7,112 @@
 #include "VectorUtils4.h"
 
 // Add more globals as needed
+// NOTE: I added this
+float cohesionRadius = 200.0f;
+float cohesionStrength = 0.1f;
+float separationRadius = 50.0f;
+float separationStrength = 0.5f;
+float alignmentRadius = 100.0f;
+float alignmentStrength = 0.25f;
+float maxSpeed = 3.0f;
+
+// NOTE: I added this
+void LimitSpeed(SpritePtr boid, float maxSpeed) {
+    float currentSpeed = Norm(boid->speed);
+    if (currentSpeed > maxSpeed) {
+        boid->speed = ScalarMult(Normalize(boid->speed), maxSpeed);
+    }
+}
+
+// NOTE: I added this
+void Cohesion(SpritePtr boid) {
+    SpritePtr otherBoid = gSpriteRoot;
+    vec3 sumPosition = SetVector(0.0, 0.0, 0.0);
+
+    int count = 0;
+    while (otherBoid != NULL) {
+        if (otherBoid != boid) {
+            float dist = Norm(VectorSub(boid->position, otherBoid->position));
+            if (dist < cohesionRadius) {
+                sumPosition = VectorAdd(sumPosition, otherBoid->position);
+                count++;
+            }
+        }
+        otherBoid = otherBoid->next;
+    }
+
+    if (count > 0) {
+        vec3 averagePosition = ScalarMult(sumPosition, 1.0 / count);
+        vec3 direction = Normalize(VectorSub(averagePosition, boid->position));
+        boid->speed = VectorAdd(boid->speed, ScalarMult(direction, cohesionStrength));	
+    }
+	LimitSpeed(boid, maxSpeed);
+}
+
+// NOTE: I added this
+void Separation(SpritePtr boid) {
+    SpritePtr otherBoid = gSpriteRoot;
+    vec3 sumDirection = SetVector(0.0, 0.0, 0.0);
+    
+    int count = 0;
+    while (otherBoid != NULL) {
+        if (otherBoid != boid) {
+            float dist = Norm(VectorSub(boid->position, otherBoid->position));
+            if (dist < separationRadius && dist > 0.0) {
+                vec3 awayDirection = Normalize(VectorSub(boid->position, otherBoid->position));
+                sumDirection = VectorAdd(sumDirection, awayDirection);
+                count++;
+            }
+        }
+        otherBoid = otherBoid->next;
+    }
+
+    if (count > 0) {
+        vec3 separationForce = ScalarMult(Normalize(sumDirection), separationStrength);
+        boid->speed = VectorAdd(boid->speed, separationForce);
+    }
+    LimitSpeed(boid, maxSpeed);
+}
+
+// NOTE: I added this
+void Alignment(SpritePtr boid) {
+    SpritePtr otherBoid = gSpriteRoot;
+    vec3 sumSpeed = SetVector(0.0, 0.0, 0.0);
+    
+    int count = 0;
+    while (otherBoid != NULL) {
+        if (otherBoid != boid) {
+            float dist = Norm(VectorSub(boid->position, otherBoid->position));
+            if (dist < alignmentRadius) {
+                sumSpeed = VectorAdd(sumSpeed, otherBoid->speed);
+                count++;
+            }
+        }
+        otherBoid = otherBoid->next;
+    }
+
+    if (count > 0) {
+        vec3 averageSpeed = ScalarMult(sumSpeed, 1.0 / count);
+        vec3 alignmentForce = Normalize(VectorSub(averageSpeed, boid->speed));
+        boid->speed = VectorAdd(boid->speed, ScalarMult(alignmentForce, alignmentStrength));
+    }
+	LimitSpeed(boid, maxSpeed);
+}
 
 void SpriteBehavior() // Your code!
 {
-// Add your lab code here. You may edit anywhere you want, but most of it goes here.
-// You can start from the global list gSpriteRoot.
+	// Add your lab code here. You may edit anywhere you want, but most of it goes here.
+	// You can start from the global list gSpriteRoot.
+	// NOTE: I added this
+	SpritePtr boid = gSpriteRoot;
+    while (boid != NULL) {
+        Cohesion(boid);
+        Separation(boid);
+        Alignment(boid);
+        
+        boid->position = VectorAdd(boid->position, boid->speed);
+        boid = boid->next;
+    }
 }
 
 // Drawing routine
@@ -81,9 +182,14 @@ void Init()
 	dogFace = GetFace("bilder/dog.tga"); // A dog
 	foodFace = GetFace("bilder/mat.tga"); // Food
 	
-	NewSprite(sheepFace, 100, 200, 1, 1);
-	NewSprite(sheepFace, 200, 100, 1.5, -1);
-	NewSprite(sheepFace, 250, 200, -1, 1.5);
+	//NewSprite(sheepFace, 100, 200, 1, 1);
+	//NewSprite(sheepFace, 200, 100, 1.5, -1);
+	//NewSprite(sheepFace, 250, 200, -1, 1.5);
+
+	// NOTE: I added this
+	for (int i = 0; i < 10; i++) {
+        NewSprite(sheepFace, rand() % 800, rand() % 600, ((rand() % 100) / 50.0f) - 1, ((rand() % 100) / 50.0f) - 1);
+    }
 }
 
 int main(int argc, char **argv)

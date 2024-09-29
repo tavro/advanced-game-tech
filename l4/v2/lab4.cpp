@@ -14,6 +14,15 @@
 // Example of user controllable parameter
 float someValue = 1.0;
 
+// TODO: Add sliders for these and migrate to this version
+float cohesionRadius = 200.0f;
+float cohesionStrength = 0.1f;
+float separationRadius = 50.0f;
+float separationStrength = 0.5f;
+float alignmentRadius = 100.0f;
+float alignmentStrength = 0.25f;
+float maxSpeed = 3.0f;
+
 void SpriteBehavior() // Your code!
 {
 // Add your lab code here. You may edit anywhere you want, but most of it goes here.
