@@ -16,6 +16,8 @@ typedef struct SpriteRec
 	struct SpriteRec *next;
 	
 	// Add custom sprite data here as needed
+	// NOTE: I added this
+	int isBlackSheep;
 } SpriteRec, *SpritePtr;
 
 // Globals: The sprite list, background texture and viewport dimensions (virtual or real pixels)
