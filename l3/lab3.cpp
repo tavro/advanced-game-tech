@@ -172,14 +172,6 @@ void updateWorld()
 
 			if(dist < d && dot(ball[i].v - ball[j].v, normalize(ball[j].X - ball[i].X)) >= 0) {
 				vec3 impulse = (-(1 + 1) * dot((ball[i].v - ball[j].v), cNormal) / ((1 / ball[i].mass) + (1 / ball[j].mass))) * cNormal;
-				/*
-				ball[i].F +=  impulse / deltaT;
-                ball[i].T +=  CrossProduct(cNormal, impulse);
-                ball[j].F +=  -impulse / deltaT;
-                ball[j].T +=  CrossProduct(-cNormal, impulse);
-                ball[j].X += (d - dist) * cNormal;
-                ball[j].X -= (d - dist) * cNormal;
-				*/
 				ball[i].P += impulse;
                 ball[j].P -= impulse;
 			}
@@ -215,7 +207,9 @@ void updateWorld()
 		// YOUR CODE HERE
 		// NOTE: I added this
 		float j = 2.0/5.0 * ball[i].mass * kBallSize * kBallSize;
-		mat3 I = { j, 0, 0, 0, j, 0, 0, 0, j };
+		mat3 I = { j, 0, 0, 
+				   0, j, 0, 
+				   0, 0, j };
 		ball[i].omega = InvertMat3(I) * ball[i].L;
 
 //		v := P * 1/mass

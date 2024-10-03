@@ -17,16 +17,19 @@ typedef struct {
 
 Food food;
 float foodAttractionRadius = 300.0f;
-float foodDuration = 10.0f;
+float foodDuration = 1.0f;
 float foodAttractionStrength = 0.2f;
 
 // NOTE: I added this
 float cohesionRadius = 200.0f;
 float cohesionStrength = 0.1f;
+
 float separationRadius = 50.0f;
 float separationStrength = 0.5f;
+
 float alignmentRadius = 100.0f;
 float alignmentStrength = 0.25f;
+
 float maxSpeed = 3.0f;
 
 // NOTE: I added this
@@ -114,15 +117,15 @@ void Alignment(SpritePtr boid) {
 
 // NOTE: I added this
 void AddNoise(SpritePtr boid) {
-    float noiseStrength = 0.5f;
+    float noiseStrength = 0.9f;
     boid->speed.x += (((rand() % 100) / 50.0f) - 1) * noiseStrength;
     boid->speed.y += (((rand() % 100) / 50.0f) - 1) * noiseStrength;
     boid->speed.z += (((rand() % 100) / 50.0f) - 1) * noiseStrength;
 }
 
 // NOTE: I added this
-void SpawnFood() {
-    food.position = SetVector(rand() % 800, rand() % 600, 0.0);
+void SpawnFood(float x, float y) {
+    food.position = SetVector(x, y, 0.0);
     food.active = 1;
     food.timer = foodDuration;
 }
@@ -160,6 +163,13 @@ void SpriteBehavior() // Your code!
 	// NOTE: I added this
 	SpritePtr boid = gSpriteRoot;
     while (boid != NULL) {
+        /*
+        if(boid->isFood) {
+            boid = boid->next;
+            continue;
+        }
+        */
+
         if (boid->isBlackSheep) {
             AddNoise(boid);
         }
@@ -168,8 +178,10 @@ void SpriteBehavior() // Your code!
         Separation(boid);
         Alignment(boid);
 
+        /*
         FoodAttraction(boid);
-        
+        */
+
         boid->position = VectorAdd(boid->position, boid->speed);
         boid = boid->next;
     }
@@ -204,13 +216,14 @@ void Display()
 	do
 	{
 		HandleSprite(sp); // Callback in a real engine
-		DrawSprite(sp);
+		if(!sp->isFood) {
+            DrawSprite(sp);
+        }
 		sp = sp->next;
 	} while (sp != NULL);
 	
     // NOTE: I added this
     if (food.active) {
-        printf("Drawing food sprite at position: (%f, %f)\n", food.position.x, food.position.y);
         DrawSprite(foodSprite);
     }
 
@@ -249,29 +262,25 @@ void Key(unsigned char key,
 // NOTE: I added this
 void Mouse(int button, int state, int x, int y) {
     if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
-        food.position = SetVector(x, gHeight - y, 0.0);
-        food.active = 1;
-        food.timer = foodDuration;
+        SpawnFood((float)x, (float)y);
 
         if (foodSprite == NULL) {
-            foodSprite = NewSprite(foodFace, food.position.x, food.position.y, 0, 0);
-            printf("Food sprite created at position: (%f, %f)\n", food.position.x, food.position.y);
+            foodSprite = NewSprite(foodFace, x, y, 0, 0);
+            foodSprite->isFood = 1;
         } else {
             foodSprite->position = food.position;
-            printf("Food sprite position updated to: (%f, %f)\n", food.position.x, food.position.y);
         }
     }
 }
 
 void Init()
 {
-	TextureData *sheepFace, *blackieFace, *dogFace;
+	TextureData *sheepFace, *blackieFace;
 	
 	LoadTGATextureSimple("bilder/leaves.tga", &backgroundTexID); // Background
 	
 	sheepFace = GetFace("bilder/sheep.tga"); // A sheep
 	blackieFace = GetFace("bilder/blackie.tga"); // A black sheep
-	dogFace = GetFace("bilder/dog.tga"); // A dog
 	foodFace = GetFace("bilder/mat.tga"); // Food
 	
 	//NewSprite(sheepFace, 100, 200, 1, 1);
@@ -279,12 +288,13 @@ void Init()
 	//NewSprite(sheepFace, 250, 200, -1, 1.5);
 
 	// NOTE: I added this
-	for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 10; i++) {
         NewSprite(sheepFace, rand() % 800, rand() % 600, ((rand() % 100) / 50.0f) - 1, ((rand() % 100) / 50.0f) - 1);
     }
 
     SpritePtr blackSheep = NewSprite(blackieFace, rand() % 800, rand() % 600, ((rand() % 100) / 50.0f) - 1, ((rand() % 100) / 50.0f) - 1);
     blackSheep->isBlackSheep = 1;
+    blackSheep->isFood = 0;
 
     food.active = 0;
 }
