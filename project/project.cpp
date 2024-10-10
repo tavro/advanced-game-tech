@@ -23,7 +23,16 @@ typedef struct
   mat4 R; // Rotation
 } Speaker;
 
+typedef struct
+{
+  // TODO: GLuint tex;
+  vec3 P; // Position
+  mat4 R; // Rotation
+  vec3 v; // Velocity
+} Player;
+
 // === GLOBALS ===
+
 const int initWidth = 800, initHeight = 800;
 
 FBOstruct *fbo1;
@@ -38,10 +47,20 @@ enum {kNumSpeakers = 8};
 Model *sphere; // TODO: This should be the speaker model later
 
 Speaker speakers[16];
+Player player;
 
 mat4 projectionMatrix;
 mat4 viewMatrix, modelToWorldMatrix;
 mat4 rotateMatrix, scaleMatrix, transMatrix, tmpMatrix;
+
+/* BEAT STUFF */
+int bpm = 140;
+float beatInterval;
+float nextBeatTime;
+int scaledSpeaker = -1;
+bool isSpeakerScaled = false;
+float scaleDuration = 0.2;
+float scaleStartTime = 0.0;
 // ===============
 
 std::vector<Point> generatePoints(Point center, double radius) {
@@ -60,13 +79,19 @@ std::vector<Point> generatePoints(Point center, double radius) {
     return points;
 }
 
+void renderPlayer()
+{
+    transMatrix = T(player.P.x, 0.1, player.P.z); // position
+    tmpMatrix = modelToWorldMatrix * transMatrix * player.R * scaleMatrix; // rotation
+    glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, tmpMatrix.m);
+    DrawModel(sphere, shader, "in_Position", NULL, NULL);
+}
+
 void renderSpeaker(int index)
 {
     // glBindTexture(GL_TEXTURE_2D, speakers[index].tex);
-
-    // NOTE: 0.1 is size
     transMatrix = T(speakers[index].P.x, 0.1, speakers[index].P.z); // position
-    tmpMatrix = modelToWorldMatrix * transMatrix * speakers[index].R; // rotation
+    tmpMatrix = modelToWorldMatrix * transMatrix * speakers[index].R * scaleMatrix; // rotation
     glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, tmpMatrix.m);
     DrawModel(sphere, shader, "in_Position", NULL, NULL);
 }
@@ -102,6 +127,8 @@ void init()
     point = vec3(0, 0, 1);
 
     // Initialize speakers
+	player.P = vec3(0, 10, 0);
+	player.R = IdentityMatrix();
     std::vector<Point> points = generatePoints({0.0, 0.0}, 1.0f);
 	for (int i = 0; i < kNumSpeakers; i++)
 	{
@@ -112,6 +139,9 @@ void init()
 
     cam = vec3(0, 1.2, 2.5);
     viewMatrix = lookAtv(cam, point, vec3(0, 1, 0));
+
+    beatInterval = 60.0f / bpm;
+    nextBeatTime = beatInterval;
 }
 
 //-------------------------------callback functions------------------------------------------
@@ -119,9 +149,19 @@ void display(void)
 {
 	deltaT = glutGet(GLUT_ELAPSED_TIME) / 1000.0 - currentTime;
 	currentTime = glutGet(GLUT_ELAPSED_TIME) / 1000.0;
-	
-	int i;
 
+    if (currentTime >= nextBeatTime) {
+        if (isSpeakerScaled) {
+            isSpeakerScaled = false;
+        }
+
+        scaledSpeaker = rand() % kNumSpeakers;
+        isSpeakerScaled = true;
+        scaleStartTime = currentTime;
+
+        nextBeatTime += beatInterval;
+    }
+	
 	glClearColor(0.4, 0.5, 0.9, 0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -134,9 +174,23 @@ void display(void)
     
     printError("uploading to shader");
 
-	for (i = 0; i < kNumSpeakers; i++) {
+	for (int i = 0; i < kNumSpeakers; i++) {
+        if (isSpeakerScaled && i == scaledSpeaker) {
+            if (currentTime - scaleStartTime < scaleDuration) {
+                scaleMatrix = S(1.5, 1.5, 1.5);
+            } else {
+                isSpeakerScaled = false;
+                scaleMatrix = S(1.0, 1.0, 1.0);
+            }
+        } else {
+            scaleMatrix = S(1.0, 1.0, 1.0);
+        }
+
         renderSpeaker(i);
     }
+    
+    scaleMatrix = S(0.5, 0.5, 0.5);
+    renderPlayer();
 
     printError("rendering");
 
@@ -182,6 +236,8 @@ void mouseDragged(int x, int y)
 //-----------------------------main-----------------------------------------------
 int main(int argc, char *argv[])
 {
+    srand(time(NULL));
+    
 	glutInit(&argc, argv);
 
 	glutInitDisplayMode(GLUT_RGBA | GLUT_DEPTH | GLUT_DOUBLE);
