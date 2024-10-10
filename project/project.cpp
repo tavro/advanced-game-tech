@@ -32,7 +32,7 @@ typedef struct
 } Player;
 
 // === GLOBALS ===
-
+float speakerRadius = 2.0f;
 const int initWidth = 800, initHeight = 800;
 
 FBOstruct *fbo1;
@@ -99,17 +99,17 @@ void renderSpeaker(int index)
 
 void init()
 {
-	dumpInfo();
+    dumpInfo();
 
-	// GL inits
-	glClearDepth(1.0);
+    // GL inits
+    glClearDepth(1.0);
 
-	glEnable(GL_DEPTH_TEST);
-	glEnable(GL_CULL_FACE);
-	glCullFace(GL_BACK);
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
 
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     printError("GL inits");
 
@@ -122,20 +122,21 @@ void init()
     projectionMatrix = perspective(90, 1.0, 0.1, 1000);
     glUniformMatrix4fv(glGetUniformLocation(shader, "projMatrix"), 1, GL_TRUE, projectionMatrix.m);
 
-	modelToWorldMatrix = IdentityMatrix();
+    modelToWorldMatrix = IdentityMatrix();
 
     point = vec3(0, 0, 1);
 
     // Initialize speakers
-	player.P = vec3(0, 10, 0);
-	player.R = IdentityMatrix();
-    std::vector<Point> points = generatePoints({0.0, 0.0}, 1.0f);
-	for (int i = 0; i < kNumSpeakers; i++)
-	{
+    player.P = vec3(0, 10, 0);
+    player.R = IdentityMatrix();
+    player.v = vec3(0, 0, 0);
+    std::vector<Point> points = generatePoints({0.0, 0.0}, speakerRadius);
+    for (int i = 0; i < kNumSpeakers; i++)
+    {
         Point p = points[i];
-		speakers[i].P = vec3(p.x, 10, p.y);
-		speakers[i].R = IdentityMatrix();
-	}
+        speakers[i].P = vec3(p.x, 10, p.y);
+        speakers[i].R = IdentityMatrix();
+    }
 
     cam = vec3(0, 1.2, 2.5);
     viewMatrix = lookAtv(cam, point, vec3(0, 1, 0));
@@ -147,8 +148,8 @@ void init()
 //-------------------------------callback functions------------------------------------------
 void display(void)
 {
-	deltaT = glutGet(GLUT_ELAPSED_TIME) / 1000.0 - currentTime;
-	currentTime = glutGet(GLUT_ELAPSED_TIME) / 1000.0;
+    deltaT = glutGet(GLUT_ELAPSED_TIME) / 1000.0 - currentTime;
+    currentTime = glutGet(GLUT_ELAPSED_TIME) / 1000.0;
 
     if (currentTime >= nextBeatTime) {
         if (isSpeakerScaled) {
@@ -159,10 +160,27 @@ void display(void)
         isSpeakerScaled = true;
         scaleStartTime = currentTime;
 
+        vec3 direction = VectorSub(speakers[scaledSpeaker].P, player.P);
+
+        direction = Normalize(direction);
+        direction = ScalarMult(direction, -1);
+
+        float forceMagnitude = 1.0f;
+        player.v = ScalarMult(direction, forceMagnitude);
+
         nextBeatTime += beatInterval;
     }
-	
-	glClearColor(0.4, 0.5, 0.9, 0);
+
+    player.P = VectorAdd(player.P, ScalarMult(player.v, deltaT));
+
+    player.v = ScalarMult(player.v, 0.9);
+
+    float dist = sqrt(pow(player.P.x, 2) + pow(player.P.y - 10, 2) + pow(player.P.z, 2));
+    if (dist > speakerRadius) {
+        player.P = vec3(0, 10, 0);
+    }
+
+    glClearColor(0.4, 0.5, 0.9, 0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     glEnable(GL_DEPTH_TEST);
@@ -171,10 +189,10 @@ void display(void)
 
     glUniformMatrix4fv(glGetUniformLocation(shader, "viewMatrix"), 1, GL_TRUE, viewMatrix.m);
     glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, modelToWorldMatrix.m);
-    
+
     printError("uploading to shader");
 
-	for (int i = 0; i < kNumSpeakers; i++) {
+    for (int i = 0; i < kNumSpeakers; i++) {
         if (isSpeakerScaled && i == scaledSpeaker) {
             if (currentTime - scaleStartTime < scaleDuration) {
                 scaleMatrix = S(1.5, 1.5, 1.5);
@@ -188,13 +206,13 @@ void display(void)
 
         renderSpeaker(i);
     }
-    
+
     scaleMatrix = S(0.5, 0.5, 0.5);
     renderPlayer();
 
     printError("rendering");
 
-	glutSwapBuffers();
+    glutSwapBuffers();
 }
 
 void reshape(GLsizei w, GLsizei h)
