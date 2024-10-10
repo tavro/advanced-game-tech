@@ -7,73 +7,140 @@
 #include "LittleOBJLoader.h"
 #include "GL_utilities.h"
 
+/* PROJECT SPECIFIC CODE */
+#include <iostream>
+#include <vector>
+#include <cmath>
+
+struct Point {
+    double x, y;
+};
+
+typedef struct
+{
+  // TODO: GLuint tex;
+  vec3 P; // Position
+  mat4 R; // Rotation
+} Speaker;
+
+// === GLOBALS ===
 const int initWidth = 800, initHeight = 800;
+
+FBOstruct *fbo1;
+
+GLuint shader = 0;
+GLfloat deltaT, currentTime;
+
+vec3 cam, point;
+
+enum {kNumSpeakers = 8};
+
+Model *sphere; // TODO: This should be the speaker model later
+
+Speaker speakers[16];
 
 mat4 projectionMatrix;
 mat4 viewMatrix, modelToWorldMatrix;
+mat4 rotateMatrix, scaleMatrix, transMatrix, tmpMatrix;
+// ===============
 
-GLfloat square[] = {
-							-1,-1,0,
-							-1,1, 0,
-							1,1, 0,
-							1,-1, 0};
-GLfloat squareTexCoord[] = {
-							 0, 0,
-							 0, 1,
-							 1, 1,
-							 1, 0};
-GLuint squareIndices[] = {0, 1, 2, 0, 2, 3};
+std::vector<Point> generatePoints(Point center, double radius) {
+    /* USED FOR POSITIONING THE SPEAKERS */
+    std::vector<Point> points;
+    double angleIncrement = 2 * M_PI / kNumSpeakers;
 
-Model* squareModel;
+    for (int i = 0; i < kNumSpeakers; ++i) {
+        double angle = i * angleIncrement;
+        Point point;
+        point.x = center.x + radius * cos(angle);
+        point.y = center.y + radius * sin(angle);
+        points.push_back(point);
+    }
 
-//----------------------Globals-------------------------------------------------
-FBOstruct *fbo1;
-GLuint shader = 0;
-//-------------------------------------------------------------------------------------
+    return points;
+}
 
-void init(void)
+void renderSpeaker(int index)
+{
+    // glBindTexture(GL_TEXTURE_2D, speakers[index].tex);
+
+    // NOTE: 0.1 is size
+    transMatrix = T(speakers[index].P.x, 0.1, speakers[index].P.z); // position
+    tmpMatrix = modelToWorldMatrix * transMatrix * speakers[index].R; // rotation
+    glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, tmpMatrix.m);
+    DrawModel(sphere, shader, "in_Position", NULL, NULL);
+}
+/* ========== */
+
+void init()
 {
 	dumpInfo();
 
 	// GL inits
-	glClearColor(0.1, 0.1, 0.3, 0);
 	glClearDepth(1.0);
+
 	glEnable(GL_DEPTH_TEST);
-	glDisable(GL_CULL_FACE);
-	printError("GL inits");
+	glEnable(GL_CULL_FACE);
+	glCullFace(GL_BACK);
 
-	// Load and compile shaders
-	shader = loadShaders("temp.vert", "temp.frag");
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-	printError("init shader");
+    printError("GL inits");
 
-	fbo1 = initFBO(initWidth, initHeight, 0);
+    // Load shader
+    shader = loadShaders("temp.vert", "temp.frag");
+    printError("init shader");
 
-	vec3 cam = vec3(0, 5, 15);
-	vec3 point = vec3(0, 1, 0);
-	vec3 up = vec3(0, 1, 0);
-	viewMatrix = lookAtv(cam, point, up);
+    sphere = LoadModelPlus("sphere.obj");
+
+    projectionMatrix = perspective(90, 1.0, 0.1, 1000);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "projMatrix"), 1, GL_TRUE, projectionMatrix.m);
+
 	modelToWorldMatrix = IdentityMatrix();
+
+    point = vec3(0, 0, 1);
+
+    // Initialize speakers
+    std::vector<Point> points = generatePoints({0.0, 0.0}, 1.0f);
+	for (int i = 0; i < kNumSpeakers; i++)
+	{
+        Point p = points[i];
+		speakers[i].P = vec3(p.x, 10, p.y);
+		speakers[i].R = IdentityMatrix();
+	}
+
+    cam = vec3(0, 1.2, 2.5);
+    viewMatrix = lookAtv(cam, point, vec3(0, 1, 0));
 }
 
 //-------------------------------callback functions------------------------------------------
 void display(void)
 {
-	useFBO(fbo1, 0L, 0L);
+	deltaT = glutGet(GLUT_ELAPSED_TIME) / 1000.0 - currentTime;
+	currentTime = glutGet(GLUT_ELAPSED_TIME) / 1000.0;
+	
+	int i;
 
-    // Clear framebuffer & zbuffer
-	glClearColor(0.2, 0.2, 0.5, 0);
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glClearColor(0.4, 0.5, 0.9, 0);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-	// Activate shader program
-	glUseProgram(shader);
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
 
-    mat4 vm2;
-    vm2 = viewMatrix * modelToWorldMatrix;
-	vm2 = vm2 * T(0, -8.5, 0);
-	vm2 = vm2 * S(80, 80, 80);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "viewMatrix"), 1, GL_TRUE, viewMatrix.m);
+    glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, modelToWorldMatrix.m);
+    
+    printError("uploading to shader");
 
-    glutSwapBuffers();
+	for (i = 0; i < kNumSpeakers; i++) {
+        renderSpeaker(i);
+    }
+
+    printError("rendering");
+
+	glutSwapBuffers();
 }
 
 void reshape(GLsizei w, GLsizei h)

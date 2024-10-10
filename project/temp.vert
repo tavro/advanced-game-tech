@@ -1,14 +1,11 @@
 #version 150
 
-in vec3 inPosition;
-in vec2 inTexCoord;
+in vec3 in_Position;
 
-out vec2 texCoord;
-uniform mat4 m;
+uniform mat4 viewMatrix, modelToWorldMatrix;
+uniform mat4 projMatrix; 
 
 void main(void)
 {
-	texCoord = inTexCoord;
-	
-	gl_Position = m * vec4(inPosition, 1.0);
+    gl_Position = projMatrix * viewMatrix * modelToWorldMatrix * vec4(in_Position, 1.0);
 }
