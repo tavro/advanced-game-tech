@@ -28,6 +28,14 @@ typedef struct
   // TODO: GLuint tex;
   vec3 P; // Position
   mat4 R; // Rotation
+  vec3 color;
+} Floor;
+
+typedef struct
+{
+  // TODO: GLuint tex;
+  vec3 P; // Position
+  mat4 R; // Rotation
   vec3 v; // Velocity
 } Player;
 
@@ -43,9 +51,12 @@ GLfloat deltaT, currentTime;
 vec3 cam, point;
 
 enum {kNumSpeakers = 8};
+enum {kNumFloor = 4};
 
 Model *sphere; // TODO: This should be the speaker model later
+Model *cube;
 
+Floor floor_array[999];
 Speaker speakers[16];
 Player player;
 
@@ -79,6 +90,29 @@ std::vector<Point> generatePoints(Point center, double radius) {
     return points;
 }
 
+void generateFloor(Point center) {
+    float half_wh = (kNumFloor - 1) / 2.0f;
+    int index = 0;
+
+    for (int row = 0; row < kNumFloor; row++) {
+        for (int col = 0; col < kNumFloor; col++) {
+            float x = center.x + (col - half_wh);
+            float z = center.y + (row - half_wh);
+
+            floor_array[index].P = (vec3){x, 0.0f, z};
+            floor_array[index].R = IdentityMatrix();
+
+            floor_array[index].color = (vec3){(float)rand() / RAND_MAX, (float)rand() / RAND_MAX, (float)rand() / RAND_MAX};
+
+            index++;
+
+            if (index >= 999) {
+                return;
+            }
+        }
+    }
+}
+
 void renderPlayer()
 {
     transMatrix = T(player.P.x, 0.1, player.P.z); // position
@@ -94,6 +128,15 @@ void renderSpeaker(int index)
     tmpMatrix = modelToWorldMatrix * transMatrix * speakers[index].R * scaleMatrix; // rotation
     glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, tmpMatrix.m);
     DrawModel(sphere, shader, "in_Position", NULL, NULL);
+}
+
+void renderFloor(int index, float y)
+{
+    transMatrix = T(floor_array[index].P.x, y, floor_array[index].P.z);
+    tmpMatrix = modelToWorldMatrix * transMatrix * floor_array[index].R * scaleMatrix;
+    glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, tmpMatrix.m);
+    glUniform3fv(glGetUniformLocation(shader, "floorColor"), 1, &floor_array[index].color.x);
+    DrawModel(cube, shader, "in_Position", NULL, NULL);
 }
 /* ========== */
 
@@ -118,6 +161,7 @@ void init()
     printError("init shader");
 
     sphere = LoadModelPlus("sphere.obj");
+    cube = LoadModelPlus("cube.obj");
 
     projectionMatrix = perspective(90, 1.0, 0.1, 1000);
     glUniformMatrix4fv(glGetUniformLocation(shader, "projMatrix"), 1, GL_TRUE, projectionMatrix.m);
@@ -137,6 +181,8 @@ void init()
         speakers[i].P = vec3(p.x, 10, p.y);
         speakers[i].R = IdentityMatrix();
     }
+
+    generateFloor({0.0, 0.0});
 
     cam = vec3(0, 1.2, 2.5);
     viewMatrix = lookAtv(cam, point, vec3(0, 1, 0));
@@ -190,6 +236,10 @@ void display(void)
     glUniformMatrix4fv(glGetUniformLocation(shader, "viewMatrix"), 1, GL_TRUE, viewMatrix.m);
     glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, modelToWorldMatrix.m);
 
+
+    vec3 color = (vec3){1, 0, 0};
+    glUniform3fv(glGetUniformLocation(shader, "floorColor"), 1, &color.x);
+
     printError("uploading to shader");
 
     for (int i = 0; i < kNumSpeakers; i++) {
@@ -208,6 +258,12 @@ void display(void)
     }
 
     scaleMatrix = S(0.5, 0.5, 0.5);
+
+    for (int i = 0; i < kNumFloor*kNumFloor; i++) {
+        renderFloor(i, -0.5);
+    }
+
+    glUniform3fv(glGetUniformLocation(shader, "floorColor"), 1, &color.x);
     renderPlayer();
 
     printError("rendering");
