@@ -6,6 +6,7 @@
 #include "VectorUtils4.h"
 #include "LittleOBJLoader.h"
 #include "GL_utilities.h"
+#include "LoadTGA.h"
 
 /* PROJECT SPECIFIC CODE */
 #include <iostream>
@@ -18,7 +19,13 @@ struct Point {
 
 typedef struct
 {
-  // TODO: GLuint tex;
+  Model* model;
+  GLuint textureId;
+} ModelTexturePair;
+
+typedef struct
+{
+  GLuint tex;
   vec3 P; // Position
   mat4 R; // Rotation
 } Speaker;
@@ -33,7 +40,7 @@ typedef struct
 
 typedef struct
 {
-  // TODO: GLuint tex;
+  GLuint tex;
   vec3 P; // Position
   mat4 R; // Rotation
   vec3 v; // Velocity
@@ -53,7 +60,9 @@ vec3 cam, point;
 enum {kNumSpeakers = 8};
 enum {kNumFloor = 4};
 
-Model *sphere; // TODO: This should be the speaker model later
+Model *speaker;
+Model *penguin;
+
 Model *cube;
 
 Floor floor_array[999];
@@ -115,19 +124,22 @@ void generateFloor(Point center) {
 
 void renderPlayer()
 {
+    glBindTexture(GL_TEXTURE_2D, player.tex);
     transMatrix = T(player.P.x, 0.1, player.P.z); // position
     tmpMatrix = modelToWorldMatrix * transMatrix * player.R * scaleMatrix; // rotation
     glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, tmpMatrix.m);
-    DrawModel(sphere, shader, "in_Position", NULL, NULL);
+    glUniform1i(glGetUniformLocation(shader, "isTex"), 1);
+    DrawModel(penguin, shader, "in_Position", NULL, "in_TexCoord");
 }
 
 void renderSpeaker(int index)
 {
-    // glBindTexture(GL_TEXTURE_2D, speakers[index].tex);
+    glBindTexture(GL_TEXTURE_2D, speakers[index].tex);
     transMatrix = T(speakers[index].P.x, 0.1, speakers[index].P.z); // position
     tmpMatrix = modelToWorldMatrix * transMatrix * speakers[index].R * scaleMatrix; // rotation
     glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, tmpMatrix.m);
-    DrawModel(sphere, shader, "in_Position", NULL, NULL);
+    glUniform1i(glGetUniformLocation(shader, "isTex"), 1);
+    DrawModel(speaker, shader, "in_Position", NULL, "in_TexCoord");
 }
 
 void renderFloor(int index, float y)
@@ -136,7 +148,19 @@ void renderFloor(int index, float y)
     tmpMatrix = modelToWorldMatrix * transMatrix * floor_array[index].R * scaleMatrix;
     glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, tmpMatrix.m);
     glUniform3fv(glGetUniformLocation(shader, "floorColor"), 1, &floor_array[index].color.x);
-    DrawModel(cube, shader, "in_Position", NULL, NULL);
+    glUniform1i(glGetUniformLocation(shader, "isTex"), 0);
+    DrawModel(cube, shader, "in_Position", NULL, "in_TexCoord");
+}
+
+mat4 rotationFromTo(const vec3& from, const vec3& to) {
+    vec3 f = Normalize(from);
+    vec3 t = Normalize(to);
+    vec3 axis = cross(f, t);
+    float angle = std::acos(dot(f, t));
+    
+    mat4 rotationMatrix = ArbRotate(axis, angle);
+    
+    return rotationMatrix;
 }
 /* ========== */
 
@@ -160,8 +184,9 @@ void init()
     shader = loadShaders("temp.vert", "temp.frag");
     printError("init shader");
 
-    sphere = LoadModelPlus("sphere.obj");
+    speaker = LoadModelPlus("custom-models/Speaker.obj");
     cube = LoadModelPlus("cube.obj");
+    penguin = LoadModelPlus("custom-models/Penguin_Body.obj");
 
     projectionMatrix = perspective(90, 1.0, 0.1, 1000);
     glUniformMatrix4fv(glGetUniformLocation(shader, "projMatrix"), 1, GL_TRUE, projectionMatrix.m);
@@ -174,17 +199,34 @@ void init()
     player.P = vec3(0, 10, 0);
     player.R = IdentityMatrix();
     player.v = vec3(0, 0, 0);
+
+    char *textureStr = (char *)malloc(128);
+    sprintf(textureStr, "custom-models/Speaker_Albedo.tga");
     std::vector<Point> points = generatePoints({0.0, 0.0}, speakerRadius);
     for (int i = 0; i < kNumSpeakers; i++)
     {
         Point p = points[i];
         speakers[i].P = vec3(p.x, 10, p.y);
-        speakers[i].R = IdentityMatrix();
+
+        vec3 target(0.0f, 10.0f, 0.0f);
+        vec3 speakerPos = speakers[i].P;
+        vec3 directionToTarget = normalize(target - speakerPos);
+        vec3 forwardDirection(0.0f, 0.0f, 1.0f);
+        speakers[i].R = rotationFromTo(forwardDirection, directionToTarget);
+        if (i == 2) {
+            speakers[i].R = ArbRotate(vec3(0.0f, 1.0f, 0.0f), M_PI);
+        }
+
+        LoadTGATextureSimple(textureStr, &speakers[i].tex);
     }
+    sprintf(textureStr, "custom-models/Penguin_Albedo.tga");
+    LoadTGATextureSimple(textureStr, &player.tex);
+
+	free(textureStr);
 
     generateFloor({0.0, 0.0});
 
-    cam = vec3(0, 1.2, 2.5);
+    cam = vec3(0, 2.2, 3.5);
     viewMatrix = lookAtv(cam, point, vec3(0, 1, 0));
 
     beatInterval = 60.0f / bpm;
@@ -236,22 +278,18 @@ void display(void)
     glUniformMatrix4fv(glGetUniformLocation(shader, "viewMatrix"), 1, GL_TRUE, viewMatrix.m);
     glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, modelToWorldMatrix.m);
 
-
-    vec3 color = (vec3){1, 0, 0};
-    glUniform3fv(glGetUniformLocation(shader, "floorColor"), 1, &color.x);
-
     printError("uploading to shader");
 
     for (int i = 0; i < kNumSpeakers; i++) {
         if (isSpeakerScaled && i == scaledSpeaker) {
             if (currentTime - scaleStartTime < scaleDuration) {
-                scaleMatrix = S(1.5, 1.5, 1.5);
+                scaleMatrix = S(1.0, 1.0, 1.0);
             } else {
                 isSpeakerScaled = false;
-                scaleMatrix = S(1.0, 1.0, 1.0);
+                scaleMatrix = S(0.5, 0.5, 0.5);
             }
         } else {
-            scaleMatrix = S(1.0, 1.0, 1.0);
+            scaleMatrix = S(0.5, 0.5, 0.5);
         }
 
         renderSpeaker(i);
@@ -263,7 +301,6 @@ void display(void)
         renderFloor(i, -0.5);
     }
 
-    glUniform3fv(glGetUniformLocation(shader, "floorColor"), 1, &color.x);
     renderPlayer();
 
     printError("rendering");
