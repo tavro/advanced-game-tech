@@ -43,6 +43,7 @@ typedef struct
   GLuint tex;
   vec3 P; // Position
   mat4 R; // Rotation
+  mat4 targetR;
   vec3 v; // Velocity
 } Player;
 
@@ -124,6 +125,7 @@ void generateFloor(Point center) {
 
 void renderPlayer()
 {
+    scaleMatrix = S(0.5, 0.5, 0.5);
     glBindTexture(GL_TEXTURE_2D, player.tex);
     transMatrix = T(player.P.x, 0.1, player.P.z); // position
     tmpMatrix = modelToWorldMatrix * transMatrix * player.R * scaleMatrix; // rotation
@@ -144,6 +146,7 @@ void renderSpeaker(int index)
 
 void renderFloor(int index, float y)
 {
+    scaleMatrix = S(0.5, 0.5, 0.5);
     transMatrix = T(floor_array[index].P.x, y, floor_array[index].P.z);
     tmpMatrix = modelToWorldMatrix * transMatrix * floor_array[index].R * scaleMatrix;
     glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, tmpMatrix.m);
@@ -162,6 +165,106 @@ mat4 rotationFromTo(const vec3& from, const vec3& to) {
     
     return rotationMatrix;
 }
+
+mat4 yAxisRotationFromTo(const vec3& from, const vec3& to) {
+    vec3 fromXZ = Normalize(vec3(from.x, 0, from.z));
+    vec3 toXZ = Normalize(vec3(to.x, 0, to.z));
+    
+    float angle = std::acos(dot(fromXZ, toXZ));
+
+    vec3 crossProd = cross(fromXZ, toXZ);
+    if (crossProd.y < 0) angle = -angle;
+
+    return ArbRotate(vec3(0, 1, 0), angle);
+}
+
+struct Quaternion {
+    float w, x, y, z;
+
+    Quaternion() : w(1), x(0), y(0), z(0) {}
+    Quaternion(float w, float x, float y, float z) : w(w), x(x), y(y), z(z) {}
+
+    Quaternion(const mat4& m) {
+        float trace = m.m[0] + m.m[5] + m.m[10];
+        if (trace > 0.0f) {
+            float s = 0.5f / sqrtf(trace + 1.0f);
+            w = 0.25f / s;
+            x = (m.m[9] - m.m[6]) * s;
+            y = (m.m[2] - m.m[8]) * s;
+            z = (m.m[4] - m.m[1]) * s;
+        } else {
+            if (m.m[0] > m.m[5] && m.m[0] > m.m[10]) {
+                float s = 2.0f * sqrtf(1.0f + m.m[0] - m.m[5] - m.m[10]);
+                w = (m.m[9] - m.m[6]) / s;
+                x = 0.25f * s;
+                y = (m.m[1] + m.m[4]) / s;
+                z = (m.m[2] + m.m[8]) / s;
+            } else if (m.m[5] > m.m[10]) {
+                float s = 2.0f * sqrtf(1.0f + m.m[5] - m.m[0] - m.m[10]);
+                w = (m.m[2] - m.m[8]) / s;
+                x = (m.m[1] + m.m[4]) / s;
+                y = 0.25f * s;
+                z = (m.m[6] + m.m[9]) / s;
+            } else {
+                float s = 2.0f * sqrtf(1.0f + m.m[10] - m.m[0] - m.m[5]);
+                w = (m.m[4] - m.m[1]) / s;
+                x = (m.m[2] + m.m[8]) / s;
+                y = (m.m[6] + m.m[9]) / s;
+                z = 0.25f * s;
+            }
+        }
+    }
+
+    mat4 toMat4() const {
+        mat4 result = IdentityMatrix();
+        result.m[0] = 1 - 2 * (y * y + z * z);
+        result.m[1] = 2 * (x * y - z * w);
+        result.m[2] = 2 * (x * z + y * w);
+        result.m[4] = 2 * (x * y + z * w);
+        result.m[5] = 1 - 2 * (x * x + z * z);
+        result.m[6] = 2 * (y * z - x * w);
+        result.m[8] = 2 * (x * z - y * w);
+        result.m[9] = 2 * (y * z + x * w);
+        result.m[10] = 1 - 2 * (x * x + y * y);
+        return result;
+    }
+
+    static Quaternion Slerp(const Quaternion& q1, const Quaternion& q2, float t) {
+        float dot = q1.w * q2.w + q1.x * q2.x + q1.y * q2.y + q1.z * q2.z;
+
+        Quaternion q2Adjusted = dot < 0.0f ? Quaternion(-q2.w, -q2.x, -q2.y, -q2.z) : q2;
+
+        dot = fabs(dot);
+        float theta = acosf(dot);
+        float sinTheta = sinf(theta);
+
+        if (sinTheta > 1e-5) {
+            float scale0 = sinf((1 - t) * theta) / sinTheta;
+            float scale1 = sinf(t * theta) / sinTheta;
+            return Quaternion(
+                scale0 * q1.w + scale1 * q2Adjusted.w,
+                scale0 * q1.x + scale1 * q2Adjusted.x,
+                scale0 * q1.y + scale1 * q2Adjusted.y,
+                scale0 * q1.z + scale1 * q2Adjusted.z
+            );
+        } else {
+            return Quaternion(
+                q1.w * (1 - t) + q2Adjusted.w * t,
+                q1.x * (1 - t) + q2Adjusted.x * t,
+                q1.y * (1 - t) + q2Adjusted.y * t,
+                q1.z * (1 - t) + q2Adjusted.z * t
+            );
+        }
+    }
+};
+
+mat4 slerpRotation(const mat4& from, const mat4& to, float factor) {
+    Quaternion qFrom(from);
+    Quaternion qTo(to);
+    Quaternion qInterpolated = Quaternion::Slerp(qFrom, qTo, factor);
+    return qInterpolated.toMat4();
+}
+
 /* ========== */
 
 void init()
@@ -197,7 +300,10 @@ void init()
 
     // Initialize speakers
     player.P = vec3(0, 10, 0);
+    
     player.R = IdentityMatrix();
+    player.targetR = IdentityMatrix();
+
     player.v = vec3(0, 0, 0);
 
     char *textureStr = (char *)malloc(128);
@@ -249,18 +355,22 @@ void display(void)
         scaleStartTime = currentTime;
 
         vec3 direction = VectorSub(speakers[scaledSpeaker].P, player.P);
-
         direction = Normalize(direction);
-        direction = ScalarMult(direction, -1);
 
+        vec3 forwardDirection = vec3(0, 0, 1);
+        player.targetR = yAxisRotationFromTo(forwardDirection, direction);
+
+        direction = ScalarMult(direction, -1);
         float forceMagnitude = 1.0f;
         player.v = ScalarMult(direction, forceMagnitude);
 
         nextBeatTime += beatInterval;
     }
 
-    player.P = VectorAdd(player.P, ScalarMult(player.v, deltaT));
+    float rotationSpeed = 0.05f;
+    player.R = slerpRotation(player.R, player.targetR, rotationSpeed);
 
+    player.P = VectorAdd(player.P, ScalarMult(player.v, deltaT));
     player.v = ScalarMult(player.v, 0.9);
 
     float dist = sqrt(pow(player.P.x, 2) + pow(player.P.y - 10, 2) + pow(player.P.z, 2));
@@ -270,7 +380,6 @@ void display(void)
 
     glClearColor(0.4, 0.5, 0.9, 0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
@@ -282,8 +391,10 @@ void display(void)
 
     for (int i = 0; i < kNumSpeakers; i++) {
         if (isSpeakerScaled && i == scaledSpeaker) {
-            if (currentTime - scaleStartTime < scaleDuration) {
-                scaleMatrix = S(1.0, 1.0, 1.0);
+            float elapsedTime = currentTime - scaleStartTime;
+            if (elapsedTime < scaleDuration) {
+                float pulseFactor = 1.0f + 0.3f * sin((elapsedTime / scaleDuration) * M_PI);
+                scaleMatrix = S(pulseFactor, pulseFactor, pulseFactor);
             } else {
                 isSpeakerScaled = false;
                 scaleMatrix = S(0.5, 0.5, 0.5);
@@ -295,9 +406,7 @@ void display(void)
         renderSpeaker(i);
     }
 
-    scaleMatrix = S(0.5, 0.5, 0.5);
-
-    for (int i = 0; i < kNumFloor*kNumFloor; i++) {
+    for (int i = 0; i < kNumFloor * kNumFloor; i++) {
         renderFloor(i, -0.5);
     }
 
@@ -307,6 +416,7 @@ void display(void)
 
     glutSwapBuffers();
 }
+
 
 void reshape(GLsizei w, GLsizei h)
 {
