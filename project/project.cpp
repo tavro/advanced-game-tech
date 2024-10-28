@@ -72,7 +72,7 @@ Player player;
 
 mat4 projectionMatrix;
 mat4 viewMatrix, modelToWorldMatrix;
-mat4 rotateMatrix, scaleMatrix, transMatrix, tmpMatrix;
+mat4 rotateMatrix, scaleMatrix, speakerScaleMatrix, transMatrix, tmpMatrix;
 
 /* BEAT STUFF */
 int bpm = 140;
@@ -138,7 +138,7 @@ void renderSpeaker(int index)
 {
     glBindTexture(GL_TEXTURE_2D, speakers[index].tex);
     transMatrix = T(speakers[index].P.x, 0.1, speakers[index].P.z); // position
-    tmpMatrix = modelToWorldMatrix * transMatrix * speakers[index].R * scaleMatrix; // rotation
+    tmpMatrix = modelToWorldMatrix * transMatrix * speakers[index].R * speakerScaleMatrix; // rotation
     glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, tmpMatrix.m);
     glUniform1i(glGetUniformLocation(shader, "isTex"), 1);
     DrawModel(speaker, shader, "in_Position", NULL, "in_TexCoord");
@@ -394,13 +394,13 @@ void display(void)
             float elapsedTime = currentTime - scaleStartTime;
             if (elapsedTime < scaleDuration) {
                 float pulseFactor = 1.0f + 0.3f * sin((elapsedTime / scaleDuration) * M_PI);
-                scaleMatrix = S(pulseFactor, pulseFactor, pulseFactor);
+                speakerScaleMatrix = S(pulseFactor, pulseFactor, pulseFactor);
             } else {
                 isSpeakerScaled = false;
-                scaleMatrix = S(0.5, 0.5, 0.5);
+                speakerScaleMatrix = S(0.5, 0.5, 0.5);
             }
         } else {
-            scaleMatrix = S(0.5, 0.5, 0.5);
+            speakerScaleMatrix = S(0.5, 0.5, 0.5);
         }
 
         renderSpeaker(i);
