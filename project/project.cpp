@@ -28,6 +28,10 @@ typedef struct
   GLuint tex;
   vec3 P; // Position
   mat4 R; // Rotation
+  bool isActive;
+  bool scaling;
+  float scaleStartTime;
+  float scaleDuration;
 } Speaker;
 
 typedef struct
@@ -72,16 +76,14 @@ Player player;
 
 mat4 projectionMatrix;
 mat4 viewMatrix, modelToWorldMatrix;
-mat4 rotateMatrix, scaleMatrix, speakerScaleMatrix, transMatrix, tmpMatrix;
+mat4 rotateMatrix, scaleMatrix, transMatrix, tmpMatrix;
 
 /* BEAT STUFF */
 int bpm = 140;
 float beatInterval;
 float nextBeatTime;
 int scaledSpeaker = -1;
-bool isSpeakerScaled = false;
-float scaleDuration = 0.2;
-float scaleStartTime = 0.0;
+
 // ===============
 
 std::vector<Point> generatePoints(Point center, double radius) {
@@ -138,7 +140,7 @@ void renderSpeaker(int index)
 {
     glBindTexture(GL_TEXTURE_2D, speakers[index].tex);
     transMatrix = T(speakers[index].P.x, 0.1, speakers[index].P.z); // position
-    tmpMatrix = modelToWorldMatrix * transMatrix * speakers[index].R * speakerScaleMatrix; // rotation
+    tmpMatrix = modelToWorldMatrix * transMatrix * speakers[index].R * scaleMatrix; // rotation
     glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, tmpMatrix.m);
     glUniform1i(glGetUniformLocation(shader, "isTex"), 1);
     DrawModel(speaker, shader, "in_Position", NULL, "in_TexCoord");
@@ -324,6 +326,11 @@ void init()
         }
 
         LoadTGATextureSimple(textureStr, &speakers[i].tex);
+
+        speakers[i].isActive = false;
+        speakers[i].scaling = false;
+        speakers[i].scaleStartTime = 0.0f;
+        speakers[i].scaleDuration = 0.1f;
     }
     sprintf(textureStr, "custom-models/Penguin_Albedo.tga");
     LoadTGATextureSimple(textureStr, &player.tex);
@@ -346,24 +353,8 @@ void display(void)
     currentTime = glutGet(GLUT_ELAPSED_TIME) / 1000.0;
 
     if (currentTime >= nextBeatTime) {
-        if (isSpeakerScaled) {
-            isSpeakerScaled = false;
-        }
-
         scaledSpeaker = rand() % kNumSpeakers;
-        isSpeakerScaled = true;
-        scaleStartTime = currentTime;
-
-        vec3 direction = VectorSub(speakers[scaledSpeaker].P, player.P);
-        direction = Normalize(direction);
-
-        vec3 forwardDirection = vec3(0, 0, 1);
-        player.targetR = yAxisRotationFromTo(forwardDirection, direction);
-
-        direction = ScalarMult(direction, -1);
-        float forceMagnitude = 1.0f;
-        player.v = ScalarMult(direction, forceMagnitude);
-
+        speakers[scaledSpeaker].isActive = true;
         nextBeatTime += beatInterval;
     }
 
@@ -389,34 +380,65 @@ void display(void)
 
     printError("uploading to shader");
 
-    for (int i = 0; i < kNumSpeakers; i++) {
-        if (isSpeakerScaled && i == scaledSpeaker) {
-            float elapsedTime = currentTime - scaleStartTime;
-            if (elapsedTime < scaleDuration) {
-                float pulseFactor = 1.0f + 0.3f * sin((elapsedTime / scaleDuration) * M_PI);
-                speakerScaleMatrix = S(pulseFactor, pulseFactor, pulseFactor);
+    vec3 totalForce = vec3(0.0f, 0.0f, 0.0f);
+
+    for (int i = 0; i < kNumSpeakers; i++)
+    {
+        if (speakers[i].isActive)
+        {
+            speakers[i].scaling = true;
+            speakers[i].scaleStartTime = currentTime;
+
+            vec3 direction = VectorSub(speakers[i].P, player.P);
+            direction = Normalize(direction);
+                    
+            vec3 forwardDirection = vec3(0, 0, 1);
+            player.targetR = yAxisRotationFromTo(forwardDirection, direction);
+
+            direction = ScalarMult(direction, -1);
+            float forceMagnitude = 1.0f;
+
+            totalForce = VectorAdd(totalForce, ScalarMult(direction, forceMagnitude));
+
+            speakers[i].isActive = false;
+        }
+
+        if (speakers[i].scaling)
+        {
+            float scaleTime = currentTime - speakers[i].scaleStartTime;
+            float scaleFactor = 0.5f;
+
+            if (scaleTime < speakers[i].scaleDuration) {
+                scaleFactor = 0.5f + (0.5f * (scaleTime / speakers[i].scaleDuration));
+            } else if (scaleTime < 2 * speakers[i].scaleDuration) {
+                scaleFactor = 1.0f - (0.5f * ((scaleTime - speakers[i].scaleDuration) / speakers[i].scaleDuration));
             } else {
-                isSpeakerScaled = false;
-                speakerScaleMatrix = S(0.5, 0.5, 0.5);
+                speakers[i].scaling = false;
+                scaleFactor = 0.5f;
             }
+
+            scaleMatrix = S(scaleFactor, scaleFactor, scaleFactor);
         } else {
-            speakerScaleMatrix = S(0.5, 0.5, 0.5);
+            scaleMatrix = S(0.5, 0.5, 0.5);
         }
 
         renderSpeaker(i);
     }
 
+    player.v = VectorAdd(player.v, totalForce);
+
+    scaleMatrix = S(0.5, 0.5, 0.5);
     for (int i = 0; i < kNumFloor * kNumFloor; i++) {
         renderFloor(i, -0.5);
     }
 
+    scaleMatrix = S(0.5, 0.5, 0.5);
     renderPlayer();
 
     printError("rendering");
 
     glutSwapBuffers();
 }
-
 
 void reshape(GLsizei w, GLsizei h)
 {
@@ -453,6 +475,17 @@ void mouseDragged(int x, int y)
 	glutPostRedisplay();
 }
 
+void keyPress(unsigned char key, int x, int y)
+{
+    if (key >= '1' && key <= '8')
+    {
+        int speakerIndex = key - '1';
+        if (speakerIndex < kNumSpeakers)
+        {
+            speakers[speakerIndex].isActive = true;
+        }
+    }
+}
 
 //-----------------------------main-----------------------------------------------
 int main(int argc, char *argv[])
@@ -470,6 +503,7 @@ int main(int argc, char *argv[])
 	glutReshapeFunc(reshape);
 	glutMouseFunc(mouseUpDown);
 	glutMotionFunc(mouseDragged);
+    glutKeyboardFunc(keyPress);
 	glutRepeatingTimer(50);
 
 	init();
