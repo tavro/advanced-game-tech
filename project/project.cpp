@@ -8,6 +8,19 @@
 #include "GL_utilities.h"
 #include "LoadTGA.h"
 
+/*
+
+TODO
+====
+
+- count down sound + dropping bird to ground
+- visual feedback (sound waves, 3... 2... 1...), adjust map
+- animation when falling of dance floor
+- flapping wings
+- improve flocking behavior
+
+*/
+
 /* PROJECT SPECIFIC CODE */
 #include <iostream>
 #include <vector>
@@ -535,7 +548,6 @@ void display(void)
     if (dist > speakerRadius) {
         player.P = vec3(0, 10, 0);
 
-        // TODO: Game over, reset everything.
         ma_engine_uninit(&engine);
         currentlyPlaying = false;
         secondsPassed = 0.0f;
