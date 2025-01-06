@@ -47,7 +47,6 @@ typedef struct
 
 typedef struct
 {
-  // TODO: GLuint tex;
   vec3 P; // Position
   mat4 R; // Rotation
   vec3 color;
@@ -535,6 +534,14 @@ void display(void)
     float dist = sqrt(pow(player.P.x, 2) + pow(player.P.y - 10, 2) + pow(player.P.z, 2));
     if (dist > speakerRadius) {
         player.P = vec3(0, 10, 0);
+
+        // TODO: Game over, reset everything.
+        ma_engine_uninit(&engine);
+        currentlyPlaying = false;
+        secondsPassed = 0.0f;
+        activeIndex = 0;
+        ma_engine_init(NULL, &engine);
+        player.v = 0;
     }
 
     glClearColor(0.4, 0.4, 0.4, 0);
