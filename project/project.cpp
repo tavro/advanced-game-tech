@@ -13,9 +13,20 @@
 #include <vector>
 #include <cmath>
 
+#define MINIAUDIO_IMPLEMENTATION
+#include "miniaudio.h"
+
+ma_engine engine;
+
 struct Point {
     double x, y;
 };
+
+typedef struct {
+    int bpm;
+    float duration;
+    char* path;
+} MusicData;
 
 typedef struct
 {
@@ -74,6 +85,7 @@ Model *cube;
 Floor floor_array[999];
 Player audience[999];
 Speaker speakers[16];
+MusicData songs[3];
 Player player;
 
 mat4 projectionMatrix;
@@ -426,7 +438,6 @@ void init()
 
     // Initialize speakers
     char *textureStr = (char *)malloc(128);
-    sprintf(textureStr, "custom-models/Speaker_Albedo.tga");
     std::vector<Point> points = generatePoints({0.0, 0.0}, speakerRadius);
     for (int i = 0; i < kNumSpeakers; i++)
     {
@@ -441,6 +452,8 @@ void init()
         if (i == 2) {
             speakers[i].R = ArbRotate(vec3(0.0f, 1.0f, 0.0f), M_PI);
         }
+        
+        sprintf(textureStr, "custom-models/Speaker_Albedo_%d.tga", i + 1);
 
         LoadTGATextureSimple(textureStr, &speakers[i].tex);
 
@@ -479,10 +492,33 @@ void init()
 }
 
 //-------------------------------callback functions------------------------------------------
+bool currentlyPlaying = false;
+float secondsPassed = 0.0f;
+int activeIndex = 0;
 void display(void)
 {
     deltaT = glutGet(GLUT_ELAPSED_TIME) / 1000.0 - currentTime;
     currentTime = glutGet(GLUT_ELAPSED_TIME) / 1000.0;
+    
+    secondsPassed += deltaT;
+    if(secondsPassed > songs[activeIndex].duration) {
+        secondsPassed = 0.0f;
+        currentlyPlaying = false;
+        activeIndex++;
+        if(activeIndex > 2) {
+            activeIndex = 0;
+        }
+        /*
+        TODO
+        beatInterval = 60.0f / songs[activeIndex].bpm;
+        nextBeatTime = beatInterval;
+        */
+    }
+
+    if(!currentlyPlaying) {
+        ma_engine_play_sound(&engine, songs[activeIndex].path, NULL);
+        currentlyPlaying = true;
+    }
 
     if (currentTime >= nextBeatTime) {
         scaledSpeaker = rand() % kNumSpeakers;
@@ -501,7 +537,7 @@ void display(void)
         player.P = vec3(0, 10, 0);
     }
 
-    glClearColor(0.4, 0.5, 0.9, 0);
+    glClearColor(0.4, 0.4, 0.4, 0);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
@@ -571,8 +607,6 @@ void display(void)
 
     scaleMatrix = S(0.5, 0.5, 0.5);
     renderPlayer();
-
-    //renderFloorWithBloom();
 
     printError("rendering");
 
@@ -646,6 +680,26 @@ int main(int argc, char *argv[])
 	glutRepeatingTimer(50);
 
 	init();
+
+    ma_result result;
+
+    result = ma_engine_init(NULL, &engine);
+    if (result != MA_SUCCESS) {
+        return -1;
+    }
+    
+    songs[0].bpm = 140;
+    songs[0].duration = 29;
+    songs[0].path = "audio/140_icy_groove.mp3";
+    songs[1].bpm = 150;
+    songs[1].duration = 40;
+    songs[1].path = "audio/150_antarctic_bass.mp3";
+    songs[2].bpm = 160;
+    songs[2].duration = 57;
+    songs[2].path = "audio/160_frozen_beats.mp3";
+
 	glutMainLoop();
+
+    ma_engine_uninit(&engine);
 	exit(0);
 }
