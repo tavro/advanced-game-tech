@@ -62,6 +62,7 @@ GLfloat deltaT, currentTime;
 
 vec3 cam, point;
 
+enum {kNumAudience = 16};
 enum {kNumSpeakers = 8};
 enum {kNumFloor = 4};
 
@@ -71,6 +72,7 @@ Model *penguin;
 Model *cube;
 
 Floor floor_array[999];
+Player audience[999];
 Speaker speakers[16];
 Player player;
 
@@ -84,77 +86,27 @@ float beatInterval;
 float nextBeatTime;
 int scaledSpeaker = -1;
 
-// ===============
-
-std::vector<Point> generatePoints(Point center, double radius) {
-    /* USED FOR POSITIONING THE SPEAKERS */
+std::vector<Point> generateAudiencePoints(Point center, double radius, double distance) {
     std::vector<Point> points;
-    double angleIncrement = 2 * M_PI / kNumSpeakers;
 
-    for (int i = 0; i < kNumSpeakers; ++i) {
-        double angle = i * angleIncrement;
-        Point point;
-        point.x = center.x + radius * cos(angle);
-        point.y = center.y + radius * sin(angle);
-        points.push_back(point);
+    std::srand(time(nullptr));
+
+    for (int i = 0; i < kNumAudience; ++i) {
+        double angle = ((double)std::rand() / RAND_MAX) * 2.0 * M_PI;
+
+        double randRadius = radius + ((double)std::rand() / RAND_MAX) * distance;
+
+        double x = center.x + randRadius * std::cos(angle);
+        double y = center.y + randRadius * std::sin(angle);
+
+        points.push_back({x, y});
     }
 
     return points;
 }
 
-void generateFloor(Point center) {
-    float half_wh = (kNumFloor - 1) / 2.0f;
-    int index = 0;
-
-    for (int row = 0; row < kNumFloor; row++) {
-        for (int col = 0; col < kNumFloor; col++) {
-            float x = center.x + (col - half_wh);
-            float z = center.y + (row - half_wh);
-
-            floor_array[index].P = (vec3){x, 0.0f, z};
-            floor_array[index].R = IdentityMatrix();
-
-            floor_array[index].color = (vec3){(float)rand() / RAND_MAX, (float)rand() / RAND_MAX, (float)rand() / RAND_MAX};
-
-            index++;
-
-            if (index >= 999) {
-                return;
-            }
-        }
-    }
-}
-
-void renderPlayer()
-{
-    scaleMatrix = S(0.5, 0.5, 0.5);
-    glBindTexture(GL_TEXTURE_2D, player.tex);
-    transMatrix = T(player.P.x, 0.1, player.P.z); // position
-    tmpMatrix = modelToWorldMatrix * transMatrix * player.R * scaleMatrix; // rotation
-    glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, tmpMatrix.m);
-    glUniform1i(glGetUniformLocation(shader, "isTex"), 1);
-    DrawModel(penguin, shader, "in_Position", NULL, "in_TexCoord");
-}
-
-void renderSpeaker(int index)
-{
-    glBindTexture(GL_TEXTURE_2D, speakers[index].tex);
-    transMatrix = T(speakers[index].P.x, 0.1, speakers[index].P.z); // position
-    tmpMatrix = modelToWorldMatrix * transMatrix * speakers[index].R * scaleMatrix; // rotation
-    glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, tmpMatrix.m);
-    glUniform1i(glGetUniformLocation(shader, "isTex"), 1);
-    DrawModel(speaker, shader, "in_Position", NULL, "in_TexCoord");
-}
-
-void renderFloor(int index, float y)
-{
-    scaleMatrix = S(0.5, 0.5, 0.5);
-    transMatrix = T(floor_array[index].P.x, y, floor_array[index].P.z);
-    tmpMatrix = modelToWorldMatrix * transMatrix * floor_array[index].R * scaleMatrix;
-    glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, tmpMatrix.m);
-    glUniform3fv(glGetUniformLocation(shader, "floorColor"), 1, &floor_array[index].color.x);
-    glUniform1i(glGetUniformLocation(shader, "isTex"), 0);
-    DrawModel(cube, shader, "in_Position", NULL, "in_TexCoord");
+float length(const vec3& v) {
+    return std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
 }
 
 mat4 rotationFromTo(const vec3& from, const vec3& to) {
@@ -166,18 +118,6 @@ mat4 rotationFromTo(const vec3& from, const vec3& to) {
     mat4 rotationMatrix = ArbRotate(axis, angle);
     
     return rotationMatrix;
-}
-
-mat4 yAxisRotationFromTo(const vec3& from, const vec3& to) {
-    vec3 fromXZ = Normalize(vec3(from.x, 0, from.z));
-    vec3 toXZ = Normalize(vec3(to.x, 0, to.z));
-    
-    float angle = std::acos(dot(fromXZ, toXZ));
-
-    vec3 crossProd = cross(fromXZ, toXZ);
-    if (crossProd.y < 0) angle = -angle;
-
-    return ArbRotate(vec3(0, 1, 0), angle);
 }
 
 struct Quaternion {
@@ -267,7 +207,184 @@ mat4 slerpRotation(const mat4& from, const mat4& to, float factor) {
     return qInterpolated.toMat4();
 }
 
-/* ========== */
+Point targetPoint;
+void moveTowardsPoint(int index) {
+    Point center = {0.0f, 0.0f};
+    double radius = speakerRadius + 1.0;
+    double maxRadius = radius + 1.0;
+
+    // Constants for flocking behavior
+    const float separationDistance = 0.5f;
+    const float maxVelocity = 0.1f;
+    const float cohesionWeight = 0.01f;
+    const float separationWeight = 0.02f;
+    const float alignmentWeight = 0.005f;
+    const float rotationSpeed = 0.05f;
+
+    Player& currentPenguin = audience[index];
+    vec3 newVelocity(0.0f, 0.0f, 0.0f);
+
+    // SEPARATION
+    for (int i = 0; i < kNumAudience; ++i) {
+        if (i == index) continue;
+
+        vec3 toOther = audience[i].P - currentPenguin.P;
+        float distanceToOther = length(toOther);
+
+        if (distanceToOther < separationDistance) {
+            newVelocity -= normalize(toOther) * separationWeight;
+        }
+    }
+
+    // COHESION
+    vec3 targetVec(targetPoint.x, 0.0f, targetPoint.y);
+    vec3 toTarget = targetVec - currentPenguin.P;
+    newVelocity += normalize(toTarget) * cohesionWeight;
+
+    // ALIGNMENT
+    vec3 averageVelocity(0.0f, 0.0f, 0.0f);
+    int neighborCount = 0;
+    for (int i = 0; i < kNumAudience; ++i) {
+        if (i == index) continue;
+
+        vec3 toOther = audience[i].P - currentPenguin.P;
+        if (length(toOther) < separationDistance * 2.0f) {
+            averageVelocity += audience[i].v;
+            neighborCount++;
+        }
+    }
+    if (neighborCount > 0) {
+        averageVelocity /= static_cast<float>(neighborCount);
+        newVelocity += normalize(averageVelocity) * alignmentWeight;
+    }
+
+    if (length(newVelocity) > maxVelocity) {
+        newVelocity = normalize(newVelocity) * maxVelocity;
+    }
+
+    currentPenguin.v = newVelocity;
+    currentPenguin.P += currentPenguin.v;
+
+    vec3 toCenter = currentPenguin.P - vec3(center.x, 0.0f, center.y);
+    float currentDistance = length(toCenter);
+
+    if (currentDistance < radius) {
+        currentPenguin.P = vec3(center.x, 0.0f, center.y) + normalize(toCenter) * static_cast<float>(radius);
+    } else if (currentDistance > maxRadius) {
+        currentPenguin.P = vec3(center.x, 0.0f, center.y) + normalize(toCenter) * static_cast<float>(maxRadius);
+    }
+
+    if (length(currentPenguin.P - targetVec) < 1.0f) {
+        double randAngle = ((double)std::rand() / RAND_MAX) * 2.0 * M_PI;
+
+        double randRadius = radius + ((double)std::rand() / RAND_MAX);
+
+        targetPoint.x = center.x + randRadius * std::cos(randAngle);
+        targetPoint.y = center.y + randRadius * std::sin(randAngle);
+    }
+
+    if (length(currentPenguin.v) > 0.0f) {
+        vec3 forwardDirection(0.0f, 0.0f, 1.0f);
+        vec3 newForward = normalize(currentPenguin.v);
+
+        mat4 targetRotation = rotationFromTo(forwardDirection, newForward);
+
+        currentPenguin.R = slerpRotation(currentPenguin.R, targetRotation, rotationSpeed);
+    }
+}
+
+std::vector<Point> generatePoints(Point center, double radius) {
+    /* USED FOR POSITIONING THE SPEAKERS */
+    std::vector<Point> points;
+    double angleIncrement = 2 * M_PI / kNumSpeakers;
+
+    for (int i = 0; i < kNumSpeakers; ++i) {
+        double angle = i * angleIncrement;
+        Point point;
+        point.x = center.x + radius * cos(angle);
+        point.y = center.y + radius * sin(angle);
+        points.push_back(point);
+    }
+
+    return points;
+}
+
+void generateFloor(Point center) {
+    float half_wh = (kNumFloor - 1) / 2.0f;
+    int index = 0;
+
+    for (int row = 0; row < kNumFloor; row++) {
+        for (int col = 0; col < kNumFloor; col++) {
+            float x = center.x + (col - half_wh);
+            float z = center.y + (row - half_wh);
+
+            floor_array[index].P = (vec3){x, 0.0f, z};
+            floor_array[index].R = IdentityMatrix();
+
+            floor_array[index].color = (vec3){(float)rand() / RAND_MAX, (float)rand() / RAND_MAX, (float)rand() / RAND_MAX};
+
+            index++;
+
+            if (index >= 999) {
+                return;
+            }
+        }
+    }
+}
+
+void renderAudience(int index) {
+    scaleMatrix = S(0.5, 0.5, 0.5);
+    glBindTexture(GL_TEXTURE_2D, audience[index].tex);
+    transMatrix = T(audience[index].P.x, -0.5, audience[index].P.z); // position
+    tmpMatrix = modelToWorldMatrix * transMatrix * audience[index].R * scaleMatrix; // rotation
+    glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, tmpMatrix.m);
+    glUniform1i(glGetUniformLocation(shader, "isTex"), 1);
+    DrawModel(penguin, shader, "in_Position", NULL, "in_TexCoord");
+}
+
+void renderPlayer()
+{
+    scaleMatrix = S(0.5, 0.5, 0.5);
+    glBindTexture(GL_TEXTURE_2D, player.tex);
+    transMatrix = T(player.P.x, 0.1, player.P.z); // position
+    tmpMatrix = modelToWorldMatrix * transMatrix * player.R * scaleMatrix; // rotation
+    glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, tmpMatrix.m);
+    glUniform1i(glGetUniformLocation(shader, "isTex"), 1);
+    DrawModel(penguin, shader, "in_Position", NULL, "in_TexCoord");
+}
+
+void renderSpeaker(int index)
+{
+    glBindTexture(GL_TEXTURE_2D, speakers[index].tex);
+    transMatrix = T(speakers[index].P.x, 0.1, speakers[index].P.z); // position
+    tmpMatrix = modelToWorldMatrix * transMatrix * speakers[index].R * scaleMatrix; // rotation
+    glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, tmpMatrix.m);
+    glUniform1i(glGetUniformLocation(shader, "isTex"), 1);
+    DrawModel(speaker, shader, "in_Position", NULL, "in_TexCoord");
+}
+
+void renderFloor(int index, float y)
+{
+    scaleMatrix = S(0.5, 0.5, 0.5);
+    transMatrix = T(floor_array[index].P.x, y, floor_array[index].P.z);
+    tmpMatrix = modelToWorldMatrix * transMatrix * floor_array[index].R * scaleMatrix;
+    glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, tmpMatrix.m);
+    glUniform3fv(glGetUniformLocation(shader, "floorColor"), 1, &floor_array[index].color.x);
+    glUniform1i(glGetUniformLocation(shader, "isTex"), 0);
+    DrawModel(cube, shader, "in_Position", NULL, "in_TexCoord");
+}
+
+mat4 yAxisRotationFromTo(const vec3& from, const vec3& to) {
+    vec3 fromXZ = Normalize(vec3(from.x, 0, from.z));
+    vec3 toXZ = Normalize(vec3(to.x, 0, to.z));
+    
+    float angle = std::acos(dot(fromXZ, toXZ));
+
+    vec3 crossProd = cross(fromXZ, toXZ);
+    if (crossProd.y < 0) angle = -angle;
+
+    return ArbRotate(vec3(0, 1, 0), angle);
+}
 
 void init()
 {
@@ -300,7 +417,6 @@ void init()
 
     point = vec3(0, 0, 1);
 
-    // Initialize speakers
     player.P = vec3(0, 10, 0);
     
     player.R = IdentityMatrix();
@@ -308,6 +424,7 @@ void init()
 
     player.v = vec3(0, 0, 0);
 
+    // Initialize speakers
     char *textureStr = (char *)malloc(128);
     sprintf(textureStr, "custom-models/Speaker_Albedo.tga");
     std::vector<Point> points = generatePoints({0.0, 0.0}, speakerRadius);
@@ -332,14 +449,29 @@ void init()
         speakers[i].scaleStartTime = 0.0f;
         speakers[i].scaleDuration = 0.1f;
     }
+    // Initialize audience
     sprintf(textureStr, "custom-models/Penguin_Albedo.tga");
+    std::vector<Point> audiencePoints = generateAudiencePoints({0.0, 0.0}, speakerRadius + 1.0, 2.0);
+    for (int i = 0; i < kNumAudience; i++) {
+        Point p = audiencePoints[i];
+        audience[i].P = vec3(p.x, 0, p.y);
+
+        vec3 target(0.0f, 0.0f, 0.0f);
+        vec3 audiencePos = audience[i].P;
+        vec3 directionToTarget = normalize(target - audiencePos);
+        vec3 forwardDirection(0.0f, 0.0f, 1.0f);
+        audience[i].R = rotationFromTo(forwardDirection, directionToTarget);
+
+        LoadTGATextureSimple(textureStr, &audience[i].tex);
+    }
+    targetPoint = audiencePoints[0];
     LoadTGATextureSimple(textureStr, &player.tex);
 
 	free(textureStr);
 
     generateFloor({0.0, 0.0});
 
-    cam = vec3(0, 2.2, 3.5);
+    cam = vec3(0, 3.2, 3.5);
     viewMatrix = lookAtv(cam, point, vec3(0, 1, 0));
 
     beatInterval = 60.0f / bpm;
@@ -425,6 +557,11 @@ void display(void)
         renderSpeaker(i);
     }
 
+    for (int i = 0; i < kNumAudience; i++) {
+        renderAudience(i);
+        moveTowardsPoint(i);
+    }
+
     player.v = VectorAdd(player.v, totalForce);
 
     scaleMatrix = S(0.5, 0.5, 0.5);
@@ -434,6 +571,8 @@ void display(void)
 
     scaleMatrix = S(0.5, 0.5, 0.5);
     renderPlayer();
+
+    //renderFloorWithBloom();
 
     printError("rendering");
 
