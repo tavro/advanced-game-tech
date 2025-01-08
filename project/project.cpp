@@ -9,16 +9,6 @@
 #include "LoadTGA.h"
 #include <algorithm>
 
-/*
-
-TODO
-====
-
-- animation when falling of dance floor
-- improve flocking behavior
-
-*/
-
 /* PROJECT SPECIFIC CODE */
 #include <iostream>
 #include <vector>
@@ -71,7 +61,7 @@ typedef struct
   mat4 targetR;
   vec3 v; // Velocity
 
-  // TEST
+  // Used for audience
   bool hasWaypoints;
   std::vector<vec3> waypoints;
   int currentWaypointIndex;
@@ -249,54 +239,50 @@ mat4 slerpRotation(const mat4& from, const mat4& to, float factor) {
 }
 
 void moveUpDownAndSpin(int index, float deltaTime) {
-    float verticalAmplitude = 1.0f;  // Amplitude for vertical oscillation
-    float verticalFrequency = 1.0f;  // Frequency for vertical oscillation
-    float rotationSpeed = 2.0f;      // Speed of rotation (radians per second)
+    // NOTE: I don't think up and down is working
+
+    float verticalAmplitude = 1.0f;
+    float verticalFrequency = 1.0f;
+    float rotationSpeed = 2.0f;
 
     Player& currentPenguin = audience[index];
 
-    // Vertical Oscillation
-    float timeFactor = deltaTime * index;  // Offset by index for unique oscillation
+    float timeFactor = deltaTime * index;
     currentPenguin.P.y = verticalAmplitude * sin(verticalFrequency * timeFactor);
 
-    // Incremental Y-axis Rotation
     mat4 incrementalRotation = ArbRotate(vec3(0, 1, 0), rotationSpeed * deltaTime);
     currentPenguin.R = currentPenguin.R * incrementalRotation;
 }
 
-// Scalar mix function
 template <typename T>
 T mix(T a, T b, float t) {
     return a * (1.0f - t) + b * t;
 }
 
-// Vector mix function for vec3
 vec3 mix(const vec3& a, const vec3& b, float t) {
     return a * (1.0f - t) + b * t;
 }
 
+bool audienceRunningAround = false;
 bool hasTargetPoint = false;
 Point targetPoint;
 
 void generateWaypointsForPenguin(Player& penguin, Point center, double radius, double maxRadius) {
-    const int numWaypoints = 5; // Number of waypoints to generate
+    const int numWaypoints = 5;
     std::vector<vec3> waypoints;
 
-    vec3 start(penguin.P.x, 0.0f, penguin.P.z); // Start position
-    vec3 target(targetPoint.x, 0.0f, targetPoint.y); // Target position
+    vec3 start(penguin.P.x, 0.0f, penguin.P.z);
+    vec3 target(targetPoint.x, 0.0f, targetPoint.y);
 
     for (int i = 0; i < numWaypoints; ++i) {
         float t = static_cast<float>(i) / (numWaypoints - 1);
 
-        // Linear interpolation between start and target
         vec3 waypoint = mix(start, target, t);
 
-        // Add randomness for a more natural path
-        float randomOffset = (rand() % 100 - 50) / 100.0f; // Random value in [-0.5, 0.5]
-        waypoint.x += randomOffset * 0.8f; // Adjust x
-        waypoint.z += randomOffset * 0.8f; // Adjust z
+        float randomOffset = (rand() % 100 - 50) / 100.0f;
+        waypoint.x += randomOffset * 0.8f;
+        waypoint.z += randomOffset * 0.8f;
 
-        // Keep waypoints within valid range
         vec3 toCenter = waypoint - vec3(center.x, 0.0f, center.y);
         float distanceToCenter = length(toCenter);
 
@@ -313,63 +299,63 @@ void generateWaypointsForPenguin(Player& penguin, Point center, double radius, d
     penguin.hasWaypoints = true;
 }
 
-bool audienceRunningAround = false;
 void moveTowardsPoint(int index, int x) {
-    // Only move the nearest `x` penguins
     Point center = {0.0f, 0.0f};
     double radius = speakerRadius + 1.0;
     double maxRadius = radius + 4.0;
 
-    // Constants for flocking behavior
     const float maxVelocity = 0.5f;
-    const float waypointReachThreshold = 0.2f; // Threshold for reaching a waypoint
-    const float dampingFactor = 0.1f;          // Damping for smoother movement
+    const float waypointReachThreshold = 0.2f;
+    const float dampingFactor = 0.1f;
     const float rotationSpeed = 0.1f;
-    const float targetReachThreshold = 1.5f;   // Distance threshold for "close enough" to target point
+    const float targetReachThreshold = 1.3f;
 
     Player& currentPenguin = audience[index];
 
-    // Check if waypoints need to be generated
     if (!currentPenguin.hasWaypoints) {
         generateWaypointsForPenguin(currentPenguin, center, radius, maxRadius);
         currentPenguin.currentWaypointIndex = 0;
     }
 
-    // Get the current waypoint
     vec3 currentWaypoint = currentPenguin.waypoints[currentPenguin.currentWaypointIndex];
 
-    // Calculate movement toward the current waypoint
     vec3 toWaypoint = currentWaypoint - currentPenguin.P;
     float distanceToWaypoint = length(toWaypoint);
 
-    // Move penguin toward the waypoint with damping for smooth motion
     vec3 desiredVelocity = normalize(toWaypoint) * maxVelocity;
     currentPenguin.v = mix(currentPenguin.v, desiredVelocity, dampingFactor);
 
-    // Apply the velocity to position
     currentPenguin.P += currentPenguin.v;
 
-    // Check if the penguin has reached the current waypoint
+    vec3 toCenter = currentPenguin.P - vec3(center.x, 0.0f, center.y);
+    float distanceToCenter = length(toCenter);
+
+    if (distanceToCenter < radius) {
+        currentPenguin.P = vec3(center.x, 0.0f, center.y) + normalize(toCenter) * static_cast<float>(radius + 0.2f);
+    } else if (distanceToCenter > maxRadius) {
+        currentPenguin.P = vec3(center.x, 0.0f, center.y) + normalize(toCenter) * static_cast<float>(maxRadius - 0.2f);
+    }
+
     if (distanceToWaypoint < waypointReachThreshold) {
         currentPenguin.currentWaypointIndex++;
         if (currentPenguin.currentWaypointIndex >= currentPenguin.waypoints.size()) {
-            currentPenguin.hasWaypoints = false; // Regenerate waypoints when all are reached
+            currentPenguin.hasWaypoints = false;
         }
     }
 
-    // Rotate penguin toward movement direction
     if (length(currentPenguin.v) > 0.0f) {
-        vec3 newForward = normalize(vec3(currentPenguin.v.x, 0.0f, currentPenguin.v.z)); // Ignore y component
+        vec3 newForward = normalize(vec3(currentPenguin.v.x, 0.0f, currentPenguin.v.z));
 
-        // Calculate the rotation to align forward direction with velocity
-        vec3 currentForward = vec3(0.0f, 0.0f, 1.0f); // Default forward direction in local space
-        mat4 targetRotation = yAxisRotationFromTo(currentForward, newForward);
+        float angle = acos(dot(vec3(0.0f, 0.0f, 1.0f), newForward));
+        if (angle > rotationSpeed) {
+            angle = rotationSpeed;
+        }
 
-        // Interpolate toward the target rotation
-        currentPenguin.R = slerpRotation(currentPenguin.R, targetRotation, 0.1f); // Smooth rotation
+        mat4 targetRotation = yAxisRotationFromTo(vec3(0.0f, 0.0f, 1.0f), newForward);
+
+        currentPenguin.R = slerpRotation(currentPenguin.R, targetRotation, angle);
     }
 
-    // Check if all penguins are close enough to the target point
     bool allCloseToTarget = true;
     for (int i = 0; i < x; ++i) {
         vec3 penguinPos = audience[i].P;
@@ -380,11 +366,25 @@ void moveTowardsPoint(int index, int x) {
         }
     }
 
-    // If all penguins are close enough to the target, set hasTargetPoint to false
     if (allCloseToTarget) {
         hasTargetPoint = false;
         audienceRunningAround = false;
+        
         player.P = vec3(0, 10, 0);
+        player.targetR = IdentityMatrix();
+        player.R = slerpRotation(player.R, player.targetR, 10.0f);
+
+        std::vector<Point> audiencePoints = generateAudiencePoints({0.0, 0.0}, speakerRadius + 1.0, 4.0);
+        for (int i = 0; i < kNumAudience; i++) {
+            Point p = audiencePoints[i];
+            audience[i].P = vec3(p.x, 0, p.y);
+
+            vec3 target(0.0f, 0.0f, 0.0f);
+            vec3 audiencePos = audience[i].P;
+            vec3 directionToTarget = normalize(target - audiencePos);
+            vec3 forwardDirection(0.0f, 0.0f, 1.0f);
+            audience[i].R = rotationFromTo(forwardDirection, directionToTarget);
+        }
     }
 }
 
@@ -501,6 +501,7 @@ void init()
     player.P = vec3(0, 10, 0);
     
     player.R = IdentityMatrix();
+
     player.targetR = IdentityMatrix();
 
     player.v = vec3(0, 0, 0);
@@ -531,6 +532,7 @@ void init()
         speakers[i].scaleStartTime = 0.0f;
         speakers[i].scaleDuration = 0.1f;
     }
+
     // Initialize audience
     sprintf(textureStr, "custom-models/Penguin_Albedo.tga");
     std::vector<Point> audiencePoints = generateAudiencePoints({0.0, 0.0}, speakerRadius + 1.0, 4.0);
@@ -578,14 +580,71 @@ vec3 camTarget = vec3(0, 3.2, 3.5);
 vec3 lookAtStart = vec3(0, 1, 1);
 vec3 lookAtTarget = vec3(0, 0, 1);
 
-// Time elapsed for the transition
-float transitionTime = 3.0f; // Time in seconds to move the camera
-float transitionElapsed = 0.0f; // Tracks time passed during the transition
+float transitionTime = 3.0f;
+float transitionElapsed = 0.0f;
 
-// Linear interpolation function
 vec3 lerp(vec3 a, vec3 b, float t) {
     return vec3(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y), a.z + t * (b.z - a.z));
 }
+
+vec3 moveDirection;
+vec3 initialPosition;
+bool isMoving = false;
+float moveDistance = 2.0f;
+
+void playerRenderAlt() {
+    if(!hasTargetPoint) {
+        if (!isMoving) {
+            initialPosition = player.P;
+            isMoving = true;
+        }
+
+        vec3 directionToMove = normalize(moveDirection);
+
+        vec3 targetPosition = initialPosition + directionToMove * moveDistance;
+
+        vec3 directionToTarget = targetPosition - player.P;
+
+        if (length(directionToTarget) < 0.8f) {
+            player.v = 0;
+            player.P = targetPosition;
+            player.P.y = -0.5;
+            
+            targetPoint.x = player.P.x;
+            targetPoint.y = player.P.z;
+            hasTargetPoint = true;
+            
+            isMoving = false;
+            return;
+        }
+
+        const float moveSpeed = 0.5f;
+        const float dampingFactor = 0.3f;
+        vec3 desiredVelocity = normalize(directionToTarget) * moveSpeed;
+
+        player.v = mix(player.v, desiredVelocity, dampingFactor);
+
+        player.P += player.v;
+
+        player.P.y = -0.5f;
+
+        mat4 rotationMatrix = rotationFromTo(vec3(0.0f, 0.0f, 1.0f), normalize(directionToTarget));
+
+        player.R = rotationMatrix;
+    }
+
+    scaleMatrix = S(0.5, 0.5, 0.5);
+    glBindTexture(GL_TEXTURE_2D, player.tex);
+
+    transMatrix = T(player.P.x, player.P.y, player.P.z);
+    tmpMatrix = modelToWorldMatrix * transMatrix * player.R * scaleMatrix;
+
+    glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, tmpMatrix.m);
+    glUniform1i(glGetUniformLocation(shader, "isTex"), 1);
+
+    DrawModel(penguin, shader, "in_Position", NULL, "in_TexCoord");
+}
+
 
 void display(void)
 {
@@ -600,6 +659,8 @@ void display(void)
         for (int i = 0; i < kNumSpeakers; i++) {
             renderSpeaker(i);
         }
+
+        playerRenderAlt();
         for (int i = 0; i < kNumAudience; i++) {
             if(hasTargetPoint) {
                 moveTowardsPoint(i, 4);
@@ -609,7 +670,6 @@ void display(void)
         for (int i = 0; i < kNumFloor * kNumFloor; i++) {
             renderFloor(i, -0.5);
         }
-        renderPlayer();
 
         glutSwapBuffers();
         return;
@@ -624,14 +684,14 @@ void display(void)
         if (transitionElapsed < transitionTime) {
             transitionElapsed += deltaT;
 
-            // Interpolate the camera position and the lookAt vector
             float t = transitionElapsed / transitionTime;
             cam = lerp(camStart, camTarget, t);
             vec3 lookAtPosition = lerp(lookAtStart, lookAtTarget, t);
-            
-            // Update the view matrix based on the new camera and lookAt position
+
             viewMatrix = lookAtv(cam, lookAtPosition, vec3(0, 1, 0));
             glUniformMatrix4fv(glGetUniformLocation(shader, "viewMatrix"), 1, GL_TRUE, viewMatrix.m);
+
+            player.R = slerpRotation(player.R, IdentityMatrix(), 1.0f);
         }
 
         if (countdownElapsed >= countdownTime && !hasTargetPoint) {
@@ -640,7 +700,6 @@ void display(void)
             transitionElapsed = 0.0f;
         }
 
-        // TODO: Render stuff that's supposed to be rendered during countdown
         glClearColor(0.4, 0.4, 0.4, 0);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -691,10 +750,6 @@ void display(void)
 
     float dist = sqrt(pow(player.P.x, 2) + pow(player.P.y - 10, 2) + pow(player.P.z, 2));
     if (dist > speakerRadius) {
-        targetPoint.x = player.P.x;
-        targetPoint.y = player.P.z;
-        hasTargetPoint = true;
-
         ma_engine_uninit(&engine);
         currentlyPlaying = false;
         secondsPassed = 0.0f;
@@ -703,9 +758,12 @@ void display(void)
         isCountdownPlaying = true;
         // TODO: Reset TIME_ELAPSED???
 
+        player.P = vec3(player.P.x, 0.1, player.P.z);
         audienceRunningAround = true;
 
         ma_engine_init(NULL, &engine);
+
+        moveDirection = player.v;
         player.v = 0;
     }
 
@@ -768,7 +826,6 @@ void display(void)
     for (int i = 0; i < kNumAudience; i++) {
         renderAudience(i);
         moveUpDownAndSpin(i, deltaT);
-        // TODO: Add code for penguin spinning and jumping
     }
 
     player.v = VectorAdd(player.v, totalForce);
