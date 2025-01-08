@@ -7,16 +7,14 @@
 #include "LittleOBJLoader.h"
 #include "GL_utilities.h"
 #include "LoadTGA.h"
+#include <algorithm>
 
 /*
 
 TODO
 ====
 
-- count down sound + dropping bird to ground
-- visual feedback (sound waves, 3... 2... 1...), adjust map
 - animation when falling of dance floor
-- flapping wings
 - improve flocking behavior
 
 */
@@ -72,6 +70,12 @@ typedef struct
   mat4 R; // Rotation
   mat4 targetR;
   vec3 v; // Velocity
+
+  // TEST
+  bool hasWaypoints;
+  std::vector<vec3> waypoints;
+  int currentWaypointIndex;
+
 } Player;
 
 // === GLOBALS ===
@@ -109,6 +113,19 @@ int bpm = 140;
 float beatInterval;
 float nextBeatTime;
 int scaledSpeaker = -1;
+
+
+mat4 yAxisRotationFromTo(const vec3& from, const vec3& to) {
+    vec3 fromXZ = Normalize(vec3(from.x, 0, from.z));
+    vec3 toXZ = Normalize(vec3(to.x, 0, to.z));
+    
+    float angle = std::acos(dot(fromXZ, toXZ));
+
+    vec3 crossProd = cross(fromXZ, toXZ);
+    if (crossProd.y < 0) angle = -angle;
+
+    return ArbRotate(vec3(0, 1, 0), angle);
+}
 
 std::vector<Point> generateAudiencePoints(Point center, double radius, double distance) {
     std::vector<Point> points;
@@ -231,89 +248,143 @@ mat4 slerpRotation(const mat4& from, const mat4& to, float factor) {
     return qInterpolated.toMat4();
 }
 
-Point targetPoint;
-void moveTowardsPoint(int index) {
-    Point center = {0.0f, 0.0f};
-    double radius = speakerRadius + 1.0;
-    double maxRadius = radius + 1.0;
-
-    // Constants for flocking behavior
-    const float separationDistance = 0.5f;
-    const float maxVelocity = 0.1f;
-    const float cohesionWeight = 0.01f;
-    const float separationWeight = 0.02f;
-    const float alignmentWeight = 0.005f;
-    const float rotationSpeed = 0.05f;
+void moveUpDownAndSpin(int index, float deltaTime) {
+    float verticalAmplitude = 1.0f;  // Amplitude for vertical oscillation
+    float verticalFrequency = 1.0f;  // Frequency for vertical oscillation
+    float rotationSpeed = 2.0f;      // Speed of rotation (radians per second)
 
     Player& currentPenguin = audience[index];
-    vec3 newVelocity(0.0f, 0.0f, 0.0f);
 
-    // SEPARATION
-    for (int i = 0; i < kNumAudience; ++i) {
-        if (i == index) continue;
+    // Vertical Oscillation
+    float timeFactor = deltaTime * index;  // Offset by index for unique oscillation
+    currentPenguin.P.y = verticalAmplitude * sin(verticalFrequency * timeFactor);
 
-        vec3 toOther = audience[i].P - currentPenguin.P;
-        float distanceToOther = length(toOther);
+    // Incremental Y-axis Rotation
+    mat4 incrementalRotation = ArbRotate(vec3(0, 1, 0), rotationSpeed * deltaTime);
+    currentPenguin.R = currentPenguin.R * incrementalRotation;
+}
 
-        if (distanceToOther < separationDistance) {
-            newVelocity -= normalize(toOther) * separationWeight;
+// Scalar mix function
+template <typename T>
+T mix(T a, T b, float t) {
+    return a * (1.0f - t) + b * t;
+}
+
+// Vector mix function for vec3
+vec3 mix(const vec3& a, const vec3& b, float t) {
+    return a * (1.0f - t) + b * t;
+}
+
+bool hasTargetPoint = false;
+Point targetPoint;
+
+void generateWaypointsForPenguin(Player& penguin, Point center, double radius, double maxRadius) {
+    const int numWaypoints = 5; // Number of waypoints to generate
+    std::vector<vec3> waypoints;
+
+    vec3 start(penguin.P.x, 0.0f, penguin.P.z); // Start position
+    vec3 target(targetPoint.x, 0.0f, targetPoint.y); // Target position
+
+    for (int i = 0; i < numWaypoints; ++i) {
+        float t = static_cast<float>(i) / (numWaypoints - 1);
+
+        // Linear interpolation between start and target
+        vec3 waypoint = mix(start, target, t);
+
+        // Add randomness for a more natural path
+        float randomOffset = (rand() % 100 - 50) / 100.0f; // Random value in [-0.5, 0.5]
+        waypoint.x += randomOffset * 0.8f; // Adjust x
+        waypoint.z += randomOffset * 0.8f; // Adjust z
+
+        // Keep waypoints within valid range
+        vec3 toCenter = waypoint - vec3(center.x, 0.0f, center.y);
+        float distanceToCenter = length(toCenter);
+
+        if (distanceToCenter < radius) {
+            waypoint = vec3(center.x, 0.0f, center.y) + normalize(toCenter) * static_cast<float>(radius + 0.2f);
+        } else if (distanceToCenter > maxRadius) {
+            waypoint = vec3(center.x, 0.0f, center.y) + normalize(toCenter) * static_cast<float>(maxRadius - 0.2f);
         }
+
+        waypoints.push_back(waypoint);
     }
 
-    // COHESION
-    vec3 targetVec(targetPoint.x, 0.0f, targetPoint.y);
-    vec3 toTarget = targetVec - currentPenguin.P;
-    newVelocity += normalize(toTarget) * cohesionWeight;
+    penguin.waypoints = waypoints;
+    penguin.hasWaypoints = true;
+}
 
-    // ALIGNMENT
-    vec3 averageVelocity(0.0f, 0.0f, 0.0f);
-    int neighborCount = 0;
-    for (int i = 0; i < kNumAudience; ++i) {
-        if (i == index) continue;
+bool audienceRunningAround = false;
+void moveTowardsPoint(int index, int x) {
+    // Only move the nearest `x` penguins
+    Point center = {0.0f, 0.0f};
+    double radius = speakerRadius + 1.0;
+    double maxRadius = radius + 4.0;
 
-        vec3 toOther = audience[i].P - currentPenguin.P;
-        if (length(toOther) < separationDistance * 2.0f) {
-            averageVelocity += audience[i].v;
-            neighborCount++;
-        }
+    // Constants for flocking behavior
+    const float maxVelocity = 0.5f;
+    const float waypointReachThreshold = 0.2f; // Threshold for reaching a waypoint
+    const float dampingFactor = 0.1f;          // Damping for smoother movement
+    const float rotationSpeed = 0.1f;
+    const float targetReachThreshold = 1.5f;   // Distance threshold for "close enough" to target point
+
+    Player& currentPenguin = audience[index];
+
+    // Check if waypoints need to be generated
+    if (!currentPenguin.hasWaypoints) {
+        generateWaypointsForPenguin(currentPenguin, center, radius, maxRadius);
+        currentPenguin.currentWaypointIndex = 0;
     }
-    if (neighborCount > 0) {
-        averageVelocity /= static_cast<float>(neighborCount);
-        newVelocity += normalize(averageVelocity) * alignmentWeight;
-    }
 
-    if (length(newVelocity) > maxVelocity) {
-        newVelocity = normalize(newVelocity) * maxVelocity;
-    }
+    // Get the current waypoint
+    vec3 currentWaypoint = currentPenguin.waypoints[currentPenguin.currentWaypointIndex];
 
-    currentPenguin.v = newVelocity;
+    // Calculate movement toward the current waypoint
+    vec3 toWaypoint = currentWaypoint - currentPenguin.P;
+    float distanceToWaypoint = length(toWaypoint);
+
+    // Move penguin toward the waypoint with damping for smooth motion
+    vec3 desiredVelocity = normalize(toWaypoint) * maxVelocity;
+    currentPenguin.v = mix(currentPenguin.v, desiredVelocity, dampingFactor);
+
+    // Apply the velocity to position
     currentPenguin.P += currentPenguin.v;
 
-    vec3 toCenter = currentPenguin.P - vec3(center.x, 0.0f, center.y);
-    float currentDistance = length(toCenter);
-
-    if (currentDistance < radius) {
-        currentPenguin.P = vec3(center.x, 0.0f, center.y) + normalize(toCenter) * static_cast<float>(radius);
-    } else if (currentDistance > maxRadius) {
-        currentPenguin.P = vec3(center.x, 0.0f, center.y) + normalize(toCenter) * static_cast<float>(maxRadius);
+    // Check if the penguin has reached the current waypoint
+    if (distanceToWaypoint < waypointReachThreshold) {
+        currentPenguin.currentWaypointIndex++;
+        if (currentPenguin.currentWaypointIndex >= currentPenguin.waypoints.size()) {
+            currentPenguin.hasWaypoints = false; // Regenerate waypoints when all are reached
+        }
     }
 
-    if (length(currentPenguin.P - targetVec) < 1.0f) {
-        double randAngle = ((double)std::rand() / RAND_MAX) * 2.0 * M_PI;
-
-        double randRadius = radius + ((double)std::rand() / RAND_MAX);
-
-        targetPoint.x = center.x + randRadius * std::cos(randAngle);
-        targetPoint.y = center.y + randRadius * std::sin(randAngle);
-    }
-
+    // Rotate penguin toward movement direction
     if (length(currentPenguin.v) > 0.0f) {
-        vec3 forwardDirection(0.0f, 0.0f, 1.0f);
-        vec3 newForward = normalize(currentPenguin.v);
+        vec3 newForward = normalize(vec3(currentPenguin.v.x, 0.0f, currentPenguin.v.z)); // Ignore y component
 
-        mat4 targetRotation = rotationFromTo(forwardDirection, newForward);
+        // Calculate the rotation to align forward direction with velocity
+        vec3 currentForward = vec3(0.0f, 0.0f, 1.0f); // Default forward direction in local space
+        mat4 targetRotation = yAxisRotationFromTo(currentForward, newForward);
 
-        currentPenguin.R = slerpRotation(currentPenguin.R, targetRotation, rotationSpeed);
+        // Interpolate toward the target rotation
+        currentPenguin.R = slerpRotation(currentPenguin.R, targetRotation, 0.1f); // Smooth rotation
+    }
+
+    // Check if all penguins are close enough to the target point
+    bool allCloseToTarget = true;
+    for (int i = 0; i < x; ++i) {
+        vec3 penguinPos = audience[i].P;
+        vec3 targetVec(targetPoint.x, 0.0f, targetPoint.y);
+        if (length(penguinPos - targetVec) >= targetReachThreshold) {
+            allCloseToTarget = false;
+            break;
+        }
+    }
+
+    // If all penguins are close enough to the target, set hasTargetPoint to false
+    if (allCloseToTarget) {
+        hasTargetPoint = false;
+        audienceRunningAround = false;
+        player.P = vec3(0, 10, 0);
     }
 }
 
@@ -398,18 +469,6 @@ void renderFloor(int index, float y)
     DrawModel(cube, shader, "in_Position", NULL, "in_TexCoord");
 }
 
-mat4 yAxisRotationFromTo(const vec3& from, const vec3& to) {
-    vec3 fromXZ = Normalize(vec3(from.x, 0, from.z));
-    vec3 toXZ = Normalize(vec3(to.x, 0, to.z));
-    
-    float angle = std::acos(dot(fromXZ, toXZ));
-
-    vec3 crossProd = cross(fromXZ, toXZ);
-    if (crossProd.y < 0) angle = -angle;
-
-    return ArbRotate(vec3(0, 1, 0), angle);
-}
-
 void init()
 {
     dumpInfo();
@@ -438,8 +497,6 @@ void init()
     glUniformMatrix4fv(glGetUniformLocation(shader, "projMatrix"), 1, GL_TRUE, projectionMatrix.m);
 
     modelToWorldMatrix = IdentityMatrix();
-
-    point = vec3(0, 0, 1);
 
     player.P = vec3(0, 10, 0);
     
@@ -476,7 +533,7 @@ void init()
     }
     // Initialize audience
     sprintf(textureStr, "custom-models/Penguin_Albedo.tga");
-    std::vector<Point> audiencePoints = generateAudiencePoints({0.0, 0.0}, speakerRadius + 1.0, 2.0);
+    std::vector<Point> audiencePoints = generateAudiencePoints({0.0, 0.0}, speakerRadius + 1.0, 4.0);
     for (int i = 0; i < kNumAudience; i++) {
         Point p = audiencePoints[i];
         audience[i].P = vec3(p.x, 0, p.y);
@@ -489,7 +546,7 @@ void init()
 
         LoadTGATextureSimple(textureStr, &audience[i].tex);
     }
-    targetPoint = audiencePoints[0];
+    
     LoadTGATextureSimple(textureStr, &player.tex);
 
 	free(textureStr);
@@ -497,7 +554,7 @@ void init()
     generateFloor({0.0, 0.0});
 
     cam = vec3(0, 3.2, 3.5);
-    viewMatrix = lookAtv(cam, point, vec3(0, 1, 0));
+    viewMatrix = lookAtv(cam, vec3(0, 0, 1), vec3(0, 1, 0));
 
     beatInterval = 60.0f / bpm;
     nextBeatTime = beatInterval;
@@ -507,11 +564,75 @@ void init()
 bool currentlyPlaying = false;
 float secondsPassed = 0.0f;
 int activeIndex = 0;
+
+bool isCountdownPlaying = true;
+float countdownTime = 4.0f;
+float countdownElapsed = 0.0f;
+
+vec3 startCamPos;
+vec3 targetCamPos = vec3(0, 3.2, 3.5);
+float camTimer = 0.0f;
+
+
 void display(void)
 {
-    deltaT = glutGet(GLUT_ELAPSED_TIME) / 1000.0 - currentTime;
+    deltaT = glutGet(GLUT_ELAPSED_TIME) / 1000.0 - currentTime; // TODO: I think this might be the problem with speakers etc.....
     currentTime = glutGet(GLUT_ELAPSED_TIME) / 1000.0;
+
+    if (audienceRunningAround) {
+        glClearColor(0.4, 0.4, 0.4, 0);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        scaleMatrix = S(0.5, 0.5, 0.5);
+        for (int i = 0; i < kNumSpeakers; i++) {
+            renderSpeaker(i);
+        }
+        for (int i = 0; i < kNumAudience; i++) {
+            if(hasTargetPoint) {
+                moveTowardsPoint(i, 4);
+            }
+            renderAudience(i);
+        }
+        for (int i = 0; i < kNumFloor * kNumFloor; i++) {
+            renderFloor(i, -0.5);
+        }
+        renderPlayer();
+
+        glutSwapBuffers();
+        return;
+    }
     
+    if (isCountdownPlaying) {
+        if (countdownElapsed == 0.0f) {
+            ma_engine_play_sound(&engine, "audio/countdown.mp3", NULL);
+        }
+        countdownElapsed += deltaT;
+
+        if (countdownElapsed >= countdownTime && !hasTargetPoint) {
+            isCountdownPlaying = false;
+            countdownElapsed = 0.0f;
+        }
+
+        // TODO: Render stuff that's supposed to be rendered during countdown
+        glClearColor(0.4, 0.4, 0.4, 0);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        scaleMatrix = S(0.5, 0.5, 0.5);
+        for (int i = 0; i < kNumSpeakers; i++) {
+            renderSpeaker(i);
+        }
+        for (int i = 0; i < kNumAudience; i++) {
+            renderAudience(i);
+        }
+        for (int i = 0; i < kNumFloor * kNumFloor; i++) {
+            renderFloor(i, -0.5);
+        }
+        renderPlayer();
+
+        glutSwapBuffers();
+        return;
+    }
+
     secondsPassed += deltaT;
     if(secondsPassed > songs[activeIndex].duration) {
         secondsPassed = 0.0f;
@@ -520,11 +641,8 @@ void display(void)
         if(activeIndex > 2) {
             activeIndex = 0;
         }
-        /*
-        TODO
         beatInterval = 60.0f / songs[activeIndex].bpm;
         nextBeatTime = beatInterval;
-        */
     }
 
     if(!currentlyPlaying) {
@@ -546,12 +664,20 @@ void display(void)
 
     float dist = sqrt(pow(player.P.x, 2) + pow(player.P.y - 10, 2) + pow(player.P.z, 2));
     if (dist > speakerRadius) {
-        player.P = vec3(0, 10, 0);
+        targetPoint.x = player.P.x;
+        targetPoint.y = player.P.z;
+        hasTargetPoint = true;
 
         ma_engine_uninit(&engine);
         currentlyPlaying = false;
         secondsPassed = 0.0f;
         activeIndex = 0;
+
+        isCountdownPlaying = true;
+        // TODO: Reset TIME_ELAPSED???
+
+        audienceRunningAround = true;
+
         ma_engine_init(NULL, &engine);
         player.v = 0;
     }
@@ -614,7 +740,8 @@ void display(void)
 
     for (int i = 0; i < kNumAudience; i++) {
         renderAudience(i);
-        moveTowardsPoint(i);
+        moveUpDownAndSpin(i, deltaT);
+        // TODO: Add code for penguin spinning and jumping
     }
 
     player.v = VectorAdd(player.v, totalForce);
@@ -655,7 +782,7 @@ void mouseDragged(int x, int y)
 	mat4 m;
 	
 	p.y = x - prevx;
-	p.x = -(prevy - y);
+	p.x = 0;
 	p.z = 0;
 
 	m = ArbRotate(p, sqrt(p.x*p.x + p.y*p.y) / 50.0);
