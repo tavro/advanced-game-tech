@@ -7,11 +7,14 @@
 #include "LittleOBJLoader.h"
 #include "GL_utilities.h"
 #include "LoadTGA.h"
-#include <algorithm>
+#include "SimpleGUI.h"
 
 /* PROJECT SPECIFIC CODE */
+#include <algorithm>
 #include <iostream>
+#include <cstring>
 #include <vector>
+#include <string>
 #include <cmath>
 
 #define MINIAUDIO_IMPLEMENTATION
@@ -27,6 +30,7 @@ typedef struct {
     int bpm;
     float duration;
     char* path;
+    char* name;
 } MusicData;
 
 typedef struct
@@ -267,6 +271,41 @@ bool audienceRunningAround = false;
 bool hasTargetPoint = false;
 Point targetPoint;
 
+void applyFlockingBehavior(Player& penguin, float alignmentWeight, float cohesionWeight, float separationWeight, float neighborRadius) {
+    vec3 alignment(0.0f, 0.0f, 0.0f);
+    vec3 cohesion(0.0f, 0.0f, 0.0f);
+    vec3 separation(0.0f, 0.0f, 0.0f);
+    int neighborCount = 0;
+
+    for (const auto& other : audience) {
+        if (&penguin == &other) continue;
+
+        vec3 toOther = other.P - penguin.P;
+        float distance = length(toOther);
+
+        if (distance < neighborRadius) {
+            alignment += other.v;
+
+            cohesion += other.P;
+
+            separation -= toOther / (distance * distance);
+
+            ++neighborCount;
+        }
+    }
+
+    if (neighborCount > 0) {
+        alignment /= static_cast<float>(neighborCount);
+        cohesion /= static_cast<float>(neighborCount);
+        cohesion = normalize(cohesion - penguin.P);
+        separation = normalize(separation);
+    }
+
+    vec3 flockingForce = alignmentWeight * alignment + cohesionWeight * cohesion + separationWeight * separation;
+
+    penguin.v = mix(penguin.v, penguin.v + flockingForce, 0.1f);
+}
+
 void generateWaypointsForPenguin(Player& penguin, Point center, double radius, double maxRadius) {
     const int numWaypoints = 5;
     std::vector<vec3> waypoints;
@@ -304,11 +343,16 @@ void moveTowardsPoint(int index, int x) {
     double radius = speakerRadius + 1.0;
     double maxRadius = radius + 4.0;
 
-    const float maxVelocity = 0.5f;
+    const float maxVelocity = 0.3f;
     const float waypointReachThreshold = 0.2f;
-    const float dampingFactor = 0.1f;
-    const float rotationSpeed = 0.1f;
+    const float dampingFactor = 0.6f;
+    const float rotationSpeed = 0.2f;
     const float targetReachThreshold = 1.3f;
+    const float neighborRadius = 1.5f;
+
+    const float alignmentWeight = 1.0f;
+    const float cohesionWeight = 0.8f;
+    const float separationWeight = 1.2f;
 
     Player& currentPenguin = audience[index];
 
@@ -324,6 +368,8 @@ void moveTowardsPoint(int index, int x) {
 
     vec3 desiredVelocity = normalize(toWaypoint) * maxVelocity;
     currentPenguin.v = mix(currentPenguin.v, desiredVelocity, dampingFactor);
+
+    applyFlockingBehavior(currentPenguin, alignmentWeight, cohesionWeight, separationWeight, neighborRadius);
 
     currentPenguin.P += currentPenguin.v;
 
@@ -369,7 +415,7 @@ void moveTowardsPoint(int index, int x) {
     if (allCloseToTarget) {
         hasTargetPoint = false;
         audienceRunningAround = false;
-        
+
         player.P = vec3(0, 10, 0);
         player.targetR = IdentityMatrix();
         player.R = slerpRotation(player.R, player.targetR, 10.0f);
@@ -469,6 +515,9 @@ void renderFloor(int index, float y)
     DrawModel(cube, shader, "in_Position", NULL, "in_TexCoord");
 }
 
+size_t bufferSize = 512;
+char* test = new char[bufferSize];
+
 void init()
 {
     dumpInfo();
@@ -484,6 +533,12 @@ void init()
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     printError("GL inits");
+
+    sgCreateStaticString(-1, -1, "Trigger sound waves by using keys 1-8 on your keyboard");
+    sgCreateDynamicString(-1, -1, test);
+	sgSetFrameColor(0,0,0);
+	sgSetTextColor(0,0,0);
+	sgSetPosition(10,10);
 
     // Load shader
     shader = loadShaders("temp.vert", "temp.frag");
@@ -645,8 +700,8 @@ void playerRenderAlt() {
     DrawModel(penguin, shader, "in_Position", NULL, "in_TexCoord");
 }
 
-
 void display(void) {
+
     static float previousTime = 0.0f;
     float elapsedTime = glutGet(GLUT_ELAPSED_TIME) / 1000.0f;
     deltaT = elapsedTime - previousTime;
@@ -719,12 +774,19 @@ void display(void) {
             renderFloor(i, -0.5f);
         }
         renderPlayer();
-
+        
         glutSwapBuffers();
         return;
     }
 
     secondsPassed += deltaT;
+
+    std::snprintf(test, bufferSize, "Playing %s (BPM %s): %s / %s s", 
+                  songs[activeIndex].name,
+                  std::to_string(songs[activeIndex].bpm).c_str(),
+                  std::to_string(secondsPassed).c_str(),
+                  std::to_string(songs[activeIndex].duration).c_str());
+
     if (secondsPassed > songs[activeIndex].duration) {
         secondsPassed = 0.0f;
         currentlyPlaying = false;
@@ -777,6 +839,8 @@ void display(void) {
     glEnable(GL_CULL_FACE);
     glCullFace(GL_BACK);
 
+    sgDraw();
+
     glUniformMatrix4fv(glGetUniformLocation(shader, "viewMatrix"), 1, GL_TRUE, viewMatrix.m);
     glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, modelToWorldMatrix.m);
 
@@ -787,7 +851,7 @@ void display(void) {
             speakers[i].scaling = true;
             speakers[i].scaleStartTime = elapsedTime;
 
-            vec3 direction = Normalize(VectorSub(speakers[i].P, player.P));
+            vec3 direction = Normalize(VectorSub(speakers[i].P, vec3(0.0f, 10.0f, 0.0f)));
             player.targetR = yAxisRotationFromTo(vec3(0, 0, 1), direction);
 
             direction = ScalarMult(direction, -1.0f);
@@ -907,6 +971,9 @@ int main(int argc, char *argv[])
         return -1;
     }
     
+    songs[0].name = "Icy Groove";
+    songs[1].name = "Antarctic Bass";
+    songs[2].name = "Frozen Beats";
     songs[0].bpm = 140;
     songs[0].duration = 29;
     songs[0].path = "audio/140_icy_groove.mp3";
