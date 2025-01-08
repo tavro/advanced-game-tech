@@ -553,8 +553,8 @@ void init()
 
     generateFloor({0.0, 0.0});
 
-    cam = vec3(0, 3.2, 3.5);
-    viewMatrix = lookAtv(cam, vec3(0, 0, 1), vec3(0, 1, 0));
+    cam = vec3(0, 1, 1.5);//vec3(0, 3.2, 3.5);
+    viewMatrix = lookAtv(cam, vec3(0, 1, 1), vec3(0, 1, 0)); //vec3(0, 0, 1);
 
     beatInterval = 60.0f / bpm;
     nextBeatTime = beatInterval;
@@ -573,6 +573,19 @@ vec3 startCamPos;
 vec3 targetCamPos = vec3(0, 3.2, 3.5);
 float camTimer = 0.0f;
 
+vec3 camStart = vec3(0, 1, 1.5);
+vec3 camTarget = vec3(0, 3.2, 3.5);
+vec3 lookAtStart = vec3(0, 1, 1);
+vec3 lookAtTarget = vec3(0, 0, 1);
+
+// Time elapsed for the transition
+float transitionTime = 3.0f; // Time in seconds to move the camera
+float transitionElapsed = 0.0f; // Tracks time passed during the transition
+
+// Linear interpolation function
+vec3 lerp(vec3 a, vec3 b, float t) {
+    return vec3(a.x + t * (b.x - a.x), a.y + t * (b.y - a.y), a.z + t * (b.z - a.z));
+}
 
 void display(void)
 {
@@ -608,9 +621,23 @@ void display(void)
         }
         countdownElapsed += deltaT;
 
+        if (transitionElapsed < transitionTime) {
+            transitionElapsed += deltaT;
+
+            // Interpolate the camera position and the lookAt vector
+            float t = transitionElapsed / transitionTime;
+            cam = lerp(camStart, camTarget, t);
+            vec3 lookAtPosition = lerp(lookAtStart, lookAtTarget, t);
+            
+            // Update the view matrix based on the new camera and lookAt position
+            viewMatrix = lookAtv(cam, lookAtPosition, vec3(0, 1, 0));
+            glUniformMatrix4fv(glGetUniformLocation(shader, "viewMatrix"), 1, GL_TRUE, viewMatrix.m);
+        }
+
         if (countdownElapsed >= countdownTime && !hasTargetPoint) {
             isCountdownPlaying = false;
             countdownElapsed = 0.0f;
+            transitionElapsed = 0.0f;
         }
 
         // TODO: Render stuff that's supposed to be rendered during countdown
