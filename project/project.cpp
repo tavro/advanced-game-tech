@@ -646,35 +646,38 @@ void playerRenderAlt() {
 }
 
 
-void display(void)
-{
-    deltaT = glutGet(GLUT_ELAPSED_TIME) / 1000.0 - currentTime; // TODO: I think this might be the problem with speakers etc.....
-    currentTime = glutGet(GLUT_ELAPSED_TIME) / 1000.0;
+void display(void) {
+    static float previousTime = 0.0f;
+    float elapsedTime = glutGet(GLUT_ELAPSED_TIME) / 1000.0f;
+    deltaT = elapsedTime - previousTime;
+    previousTime = elapsedTime;
+
+    if (deltaT > 0.1f) deltaT = 0.1f;
 
     if (audienceRunningAround) {
-        glClearColor(0.4, 0.4, 0.4, 0);
+        glClearColor(0.4f, 0.4f, 0.4f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        scaleMatrix = S(0.5, 0.5, 0.5);
+        scaleMatrix = S(0.5f, 0.5f, 0.5f);
         for (int i = 0; i < kNumSpeakers; i++) {
             renderSpeaker(i);
         }
 
         playerRenderAlt();
         for (int i = 0; i < kNumAudience; i++) {
-            if(hasTargetPoint) {
+            if (hasTargetPoint) {
                 moveTowardsPoint(i, 4);
             }
             renderAudience(i);
         }
         for (int i = 0; i < kNumFloor * kNumFloor; i++) {
-            renderFloor(i, -0.5);
+            renderFloor(i, -0.5f);
         }
 
         glutSwapBuffers();
         return;
     }
-    
+
     if (isCountdownPlaying) {
         if (countdownElapsed == 0.0f) {
             ma_engine_play_sound(&engine, "audio/countdown.mp3", NULL);
@@ -698,12 +701,14 @@ void display(void)
             isCountdownPlaying = false;
             countdownElapsed = 0.0f;
             transitionElapsed = 0.0f;
+
+            nextBeatTime = elapsedTime + beatInterval;
         }
 
-        glClearColor(0.4, 0.4, 0.4, 0);
+        glClearColor(0.4f, 0.4f, 0.4f, 0.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        scaleMatrix = S(0.5, 0.5, 0.5);
+        scaleMatrix = S(0.5f, 0.5f, 0.5f);
         for (int i = 0; i < kNumSpeakers; i++) {
             renderSpeaker(i);
         }
@@ -711,7 +716,7 @@ void display(void)
             renderAudience(i);
         }
         for (int i = 0; i < kNumFloor * kNumFloor; i++) {
-            renderFloor(i, -0.5);
+            renderFloor(i, -0.5f);
         }
         renderPlayer();
 
@@ -720,23 +725,23 @@ void display(void)
     }
 
     secondsPassed += deltaT;
-    if(secondsPassed > songs[activeIndex].duration) {
+    if (secondsPassed > songs[activeIndex].duration) {
         secondsPassed = 0.0f;
         currentlyPlaying = false;
         activeIndex++;
-        if(activeIndex > 2) {
+        if (activeIndex > 2) {
             activeIndex = 0;
         }
         beatInterval = 60.0f / songs[activeIndex].bpm;
-        nextBeatTime = beatInterval;
+        nextBeatTime = elapsedTime + beatInterval;
     }
 
-    if(!currentlyPlaying) {
+    if (!currentlyPlaying) {
         ma_engine_play_sound(&engine, songs[activeIndex].path, NULL);
         currentlyPlaying = true;
     }
 
-    if (currentTime >= nextBeatTime) {
+    if (elapsedTime >= nextBeatTime) {
         scaledSpeaker = rand() % kNumSpeakers;
         speakers[scaledSpeaker].isActive = true;
         nextBeatTime += beatInterval;
@@ -746,7 +751,7 @@ void display(void)
     player.R = slerpRotation(player.R, player.targetR, rotationSpeed);
 
     player.P = VectorAdd(player.P, ScalarMult(player.v, deltaT));
-    player.v = ScalarMult(player.v, 0.9);
+    player.v = ScalarMult(player.v, 0.9f);
 
     float dist = sqrt(pow(player.P.x, 2) + pow(player.P.y - 10, 2) + pow(player.P.z, 2));
     if (dist > speakerRadius) {
@@ -756,18 +761,17 @@ void display(void)
         activeIndex = 0;
 
         isCountdownPlaying = true;
-        // TODO: Reset TIME_ELAPSED???
 
-        player.P = vec3(player.P.x, 0.1, player.P.z);
+        player.P = vec3(player.P.x, 0.1f, player.P.z);
         audienceRunningAround = true;
 
         ma_engine_init(NULL, &engine);
 
         moveDirection = player.v;
-        player.v = 0;
+        player.v = vec3(0.0f, 0.0f, 0.0f);
     }
 
-    glClearColor(0.4, 0.4, 0.4, 0);
+    glClearColor(0.4f, 0.4f, 0.4f, 0.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
@@ -776,34 +780,24 @@ void display(void)
     glUniformMatrix4fv(glGetUniformLocation(shader, "viewMatrix"), 1, GL_TRUE, viewMatrix.m);
     glUniformMatrix4fv(glGetUniformLocation(shader, "modelToWorldMatrix"), 1, GL_TRUE, modelToWorldMatrix.m);
 
-    printError("uploading to shader");
-
     vec3 totalForce = vec3(0.0f, 0.0f, 0.0f);
 
-    for (int i = 0; i < kNumSpeakers; i++)
-    {
-        if (speakers[i].isActive)
-        {
+    for (int i = 0; i < kNumSpeakers; i++) {
+        if (speakers[i].isActive) {
             speakers[i].scaling = true;
-            speakers[i].scaleStartTime = currentTime;
+            speakers[i].scaleStartTime = elapsedTime;
 
-            vec3 direction = VectorSub(speakers[i].P, player.P);
-            direction = Normalize(direction);
-                    
-            vec3 forwardDirection = vec3(0, 0, 1);
-            player.targetR = yAxisRotationFromTo(forwardDirection, direction);
+            vec3 direction = Normalize(VectorSub(speakers[i].P, player.P));
+            player.targetR = yAxisRotationFromTo(vec3(0, 0, 1), direction);
 
-            direction = ScalarMult(direction, -1);
-            float forceMagnitude = 1.0f;
-
-            totalForce = VectorAdd(totalForce, ScalarMult(direction, forceMagnitude));
+            direction = ScalarMult(direction, -1.0f);
+            totalForce = VectorAdd(totalForce, ScalarMult(direction, 1.0f));
 
             speakers[i].isActive = false;
         }
 
-        if (speakers[i].scaling)
-        {
-            float scaleTime = currentTime - speakers[i].scaleStartTime;
+        if (speakers[i].scaling) {
+            float scaleTime = elapsedTime - speakers[i].scaleStartTime;
             float scaleFactor = 0.5f;
 
             if (scaleTime < speakers[i].scaleDuration) {
@@ -812,12 +806,11 @@ void display(void)
                 scaleFactor = 1.0f - (0.5f * ((scaleTime - speakers[i].scaleDuration) / speakers[i].scaleDuration));
             } else {
                 speakers[i].scaling = false;
-                scaleFactor = 0.5f;
             }
 
             scaleMatrix = S(scaleFactor, scaleFactor, scaleFactor);
         } else {
-            scaleMatrix = S(0.5, 0.5, 0.5);
+            scaleMatrix = S(0.5f, 0.5f, 0.5f);
         }
 
         renderSpeaker(i);
@@ -830,18 +823,14 @@ void display(void)
 
     player.v = VectorAdd(player.v, totalForce);
 
-    scaleMatrix = S(0.5, 0.5, 0.5);
     for (int i = 0; i < kNumFloor * kNumFloor; i++) {
-        renderFloor(i, -0.5);
+        renderFloor(i, -0.5f);
     }
 
-    scaleMatrix = S(0.5, 0.5, 0.5);
     renderPlayer();
-
-    printError("rendering");
-
     glutSwapBuffers();
 }
+
 
 void reshape(GLsizei w, GLsizei h)
 {
